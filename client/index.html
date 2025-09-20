@@ -1,148 +1,34 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lakdi - Multiplayer Card Game</title>
-  <style>
-    /* --- Basic Reset --- */
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      background: linear-gradient(135deg, #1a4f3a, #0d2818);
-      color: white;
-      height: 100vh;
-      overflow: hidden;
-    }
+<!doctype html>
+<meta charset="utf-8">
+<title>Lakdi Connection Test</title>
+<h1>Lakdi – Connection Test</h1>
+<p id="status">Connecting…</p>
+<button id="pingBtn" disabled>Ping server</button>
+<pre id="log" style="background:#111;color:#0f0;padding:12px;border-radius:8px;min-height:120px;"></pre>
 
-    /* --- Login --- */
-    .login-screen { display: flex; align-items: center; justify-content: center; height: 100vh; }
-    .login-card { background: rgba(255,255,255,0.1); border-radius: 20px; padding: 40px; text-align: center; }
-    .login-card h1 { font-size: 2.5em; margin-bottom: 20px; }
-    .login-form { display: flex; flex-direction: column; gap: 15px; }
-    .login-form input { padding: 10px; border-radius: 8px; border: none; }
-    .btn { padding: 12px; border-radius: 10px; cursor: pointer; font-weight: bold; }
-    .btn-primary { background: linear-gradient(45deg, #ff6b6b, #ee5a24); color: white; }
-    .btn-secondary { background: linear-gradient(45deg, #4834d4, #686de0); color: white; }
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+  const SOCKET_URL = "https://lakdi.onrender.com"; // NOTE: https, not wss – Socket.IO handles upgrade
+  const socket = io(SOCKET_URL, { transports: ["polling", "websocket"], upgrade: true });
 
-    /* --- Lobby --- */
-    .hidden { display: none !important; }
-    .lobby-screen { padding: 20px; }
-    .room-code { font-size: 24px; font-weight: bold; color: #ffd700; }
+  const status = document.getElementById("status");
+  const log = (...args) => {
+    const el = document.getElementById("log");
+    el.textContent += args.map(a => (typeof a === "string" ? a : JSON.stringify(a))).join(" ") + "\n";
+  };
 
-    /* --- Game Table --- */
-    .game-table { display: flex; justify-content: center; align-items: center; height: 100vh; position: relative; }
-    .card { width: 80px; height: 110px; background: white; color: black; border-radius: 8px; display: flex; justify-content: center; align-items: center; margin: 5px; font-weight: bold; }
-    .card.red { color: #e74c3c; }
-    .card.black { color: #2c3e50; }
-    .player-hand { position: absolute; bottom: 20px; display: flex; }
-
-    /* --- Action Bar --- */
-    .action-bar { position: absolute; bottom: 150px; display: flex; gap: 10px; }
-    .action-btn { padding: 10px 15px; border-radius: 10px; font-weight: bold; }
-    .action-btn.discard { background: #e74c3c; color: white; }
-    .action-btn.draw-stock { background: #3498db; color: white; }
-    .action-btn.draw-discard { background: #f39c12; color: white; }
-    .action-btn.lakdi { background: #2ecc71; color: white; }
-    .action-btn.cut { background: #9b59b6; color: white; }
-    .action-btn.pass { background: #95a5a6; color: white; }
-
-    /* --- Cut Countdown --- */
-    .cut-countdown {
-      align-self: center;
-      padding: 6px 10px;
-      border-radius: 10px;
-      background: rgba(241, 196, 15, 0.15);
-      border: 1px solid rgba(241, 196, 15, 0.4);
-      color: #f1c40f;
-      font-weight: 700;
-      font-size: 13px;
-    }
-    @keyframes pulseRed {
-      0% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.2); opacity: 0.6; }
-      100% { transform: scale(1); opacity: 1; }
-    }
-    .cut-countdown.urgent {
-      color: #e74c3c;
-      border-color: rgba(231, 76, 60, 0.6);
-      background: rgba(231, 76, 60, 0.15);
-      animation: pulseRed 0.8s infinite;
-    }
-  </style>
-</head>
-<body>
-  <!-- Login Screen -->
-  <div id="loginScreen" class="login-screen">
-    <div class="login-card">
-      <h1>🃏 Lakdi</h1>
-      <div class="login-form">
-        <input type="text" id="playerName" placeholder="Enter your name">
-        <input type="text" id="roomCode" placeholder="Room code (leave empty to create)">
-        <button class="btn btn-primary" onclick="joinRoom()">Join Game</button>
-        <button class="btn btn-secondary" onclick="createRoom()">Create New Room</button>
-        <div id="loginMessage"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Lobby -->
-  <div id="lobbyScreen" class="lobby-screen hidden">
-    <h2>Game Lobby</h2>
-    <div>Room Code: <span id="displayRoomCode" class="room-code"></span></div>
-    <div id="playersList"></div>
-    <button class="btn btn-primary" id="startGameBtn" onclick="startGame()" disabled>Start Game</button>
-  </div>
-
-  <!-- Game Screen -->
-  <div id="gameScreen" class="game-table hidden">
-    <div class="player-hand" id="playerHand"></div>
-    <div class="action-bar">
-      <button class="action-btn discard" id="discardBtn" onclick="discard()" disabled>Discard</button>
-      <button class="action-btn draw-stock" id="drawStockBtn" onclick="drawStock()" disabled>Draw Stock</button>
-      <button class="action-btn draw-discard" id="drawDiscardBtn" onclick="drawDiscard()" disabled>Draw Discard</button>
-      <button class="action-btn lakdi" id="lakdiBtn" onclick="callLakdi()" disabled>Call Lakdi</button>
-      <button class="action-btn cut" id="cutBtn" onclick="attemptCut()" disabled>Cut</button>
-      <button class="action-btn pass" id="passBtn" onclick="passCut()" disabled>Pass</button>
-      <span id="cutCountdown" class="cut-countdown hidden">⏳ 7s</span>
-    </div>
-  </div>
-
-  <!-- Socket.IO -->
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <script>
-    // 🚀 Replace with your Render server URL
-    const socket = io("https://lakdi.onrender.com", {
-    transports: ["polling", "websocket"],  // allow both
-    upgrade: true,                         // default, but explicit
-    path: "/socket.io/"                    // default, but explicit
+  socket.on("connect", () => {
+    status.textContent = "✅ Connected: " + socket.id;
+    document.getElementById("pingBtn").disabled = false;
+    log("connected", socket.id);
   });
+  socket.on("connect_error", (err) => { status.textContent = "❌ connect_error"; log("connect_error:", err.message || err); });
+  socket.on("disconnect", (r) => { status.textContent = "🔌 disconnected"; log("disconnect:", r); });
 
-    // Example event bindings
-    function createRoom() {
-      const name = document.getElementById("playerName").value;
-      socket.emit("create_room", { name });
-    }
-    function joinRoom() {
-      const name = document.getElementById("playerName").value;
-      const code = document.getElementById("roomCode").value;
-      socket.emit("join_room", { name, code });
-    }
-    function startGame() { socket.emit("start_game"); }
-    function discard() { socket.emit("discard"); }
-    function drawStock() { socket.emit("draw_stock"); }
-    function drawDiscard() { socket.emit("draw_discard"); }
-    function callLakdi() { socket.emit("call_lakdi"); }
-    function attemptCut() { socket.emit("attempt_cut"); }
-    function passCut() { socket.emit("pass_cut"); }
+  document.getElementById("pingBtn").onclick = () => {
+    socket.emit("ping", null, (reply) => log("pong?", reply));
+  };
 
-    // Listen for updates from server
-    socket.on("room_update", (room) => {
-      console.log("Room update:", room);
-    });
-    socket.on("game_update", (game) => {
-      console.log("Game update:", game);
-    });
-  </script>
-</body>
-</html>
+  // Safety: show unhandled promise errors clearly
+  window.addEventListener("unhandledrejection", e => log("unhandledrejection:", (e.reason && e.reason.message) || e.reason));
+</script>
