@@ -1,87 +1,66 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
   <title>Lakdi - Multiplayer Card Game</title>
   <style>
-    /* --- Basic Reset --- */
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      background: linear-gradient(135deg, #1a4f3a, #0d2818);
-      color: white;
-      height: 100vh;
-      overflow: hidden;
-    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:linear-gradient(135deg,#1a4f3a,#0d2818); color:#fff; height:100vh; overflow:hidden; }
 
-    /* --- Login --- */
-    .login-screen { display: flex; align-items: center; justify-content: center; height: 100vh; }
-    .login-card { background: rgba(255,255,255,0.1); border-radius: 20px; padding: 40px; text-align: center; }
-    .login-card h1 { font-size: 2.5em; margin-bottom: 20px; }
-    .login-form { display: flex; flex-direction: column; gap: 15px; }
-    .login-form input { padding: 10px; border-radius: 8px; border: none; }
-    .btn { padding: 12px; border-radius: 10px; cursor: pointer; font-weight: bold; }
-    .btn-primary { background: linear-gradient(45deg, #ff6b6b, #ee5a24); color: white; }
-    .btn-secondary { background: linear-gradient(45deg, #4834d4, #686de0); color: white; }
+    .hidden { display:none !important; }
 
-    /* --- Lobby --- */
-    .hidden { display: none !important; }
-    .lobby-screen { padding: 20px; }
-    .room-code { font-size: 24px; font-weight: bold; color: #ffd700; }
+    /* Login */
+    .login-screen { height:100vh; display:flex; align-items:center; justify-content:center; }
+    .login-card { background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2); border-radius:20px; padding:32px; width:min(420px,92%); text-align:center; }
+    .login-card h1 { font-size:2.2rem; margin-bottom:16px; }
+    .login-form { display:flex; flex-direction:column; gap:12px; }
+    .login-form input { padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,.3); background:rgba(255,255,255,.08); color:#fff; }
+    .btn { padding:12px 16px; border:none; border-radius:10px; font-weight:700; cursor:pointer; }
+    .btn-primary { background:linear-gradient(45deg,#ff6b6b,#ee5a24); color:#fff; }
+    .btn-secondary { background:linear-gradient(45deg,#4834d4,#686de0); color:#fff; }
+    .status { margin-top:8px; min-height:20px; opacity:.9; }
 
-    /* --- Game Table --- */
-    .game-table { display: flex; justify-content: center; align-items: center; height: 100vh; position: relative; }
-    .card { width: 80px; height: 110px; background: white; color: black; border-radius: 8px; display: flex; justify-content: center; align-items: center; margin: 5px; font-weight: bold; }
-    .card.red { color: #e74c3c; }
-    .card.black { color: #2c3e50; }
-    .player-hand { position: absolute; bottom: 20px; display: flex; }
+    /* Lobby */
+    .lobby-screen { padding:18px; }
+    .room { margin:10px 0 20px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.2); border-radius:12px; padding:12px; }
+    .room-code { font-size:24px; color:#ffd700; letter-spacing:2px; font-weight:800; }
 
-    /* --- Action Bar --- */
-    .action-bar { position: absolute; bottom: 150px; display: flex; gap: 10px; }
-    .action-btn { padding: 10px 15px; border-radius: 10px; font-weight: bold; }
-    .action-btn.discard { background: #e74c3c; color: white; }
-    .action-btn.draw-stock { background: #3498db; color: white; }
-    .action-btn.draw-discard { background: #f39c12; color: white; }
-    .action-btn.lakdi { background: #2ecc71; color: white; }
-    .action-btn.cut { background: #9b59b6; color: white; }
-    .action-btn.pass { background: #95a5a6; color: white; }
+    /* Game table */
+    .table { position:relative; height:100vh; display:flex; align-items:center; justify-content:center; }
+    .player-hand { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:10px; }
+    .card { width:80px; height:110px; background:#fff; color:#111; border-radius:10px; border:2px solid #ccc; display:flex; align-items:center; justify-content:center; font-weight:800; }
+    .card.red { color:#e74c3c; }
+    .card.black { color:#2c3e50; }
 
-    /* --- Cut Countdown --- */
-    .cut-countdown {
-      align-self: center;
-      padding: 6px 10px;
-      border-radius: 10px;
-      background: rgba(241, 196, 15, 0.15);
-      border: 1px solid rgba(241, 196, 15, 0.4);
-      color: #f1c40f;
-      font-weight: 700;
-      font-size: 13px;
-    }
-    @keyframes pulseRed {
-      0% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.2); opacity: 0.6; }
-      100% { transform: scale(1); opacity: 1; }
-    }
-    .cut-countdown.urgent {
-      color: #e74c3c;
-      border-color: rgba(231, 76, 60, 0.6);
-      background: rgba(231, 76, 60, 0.15);
-      animation: pulseRed 0.8s infinite;
-    }
+    .action-bar { position:absolute; bottom:150px; left:50%; transform:translateX(-50%); display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+    .action-btn { padding:10px 14px; border:none; border-radius:10px; font-weight:700; color:#fff; }
+    .discard { background:#e74c3c; } .draw-stock { background:#3498db; } .draw-discard { background:#f39c12; }
+    .lakdi { background:#2ecc71; } .cut { background:#9b59b6; } .pass { background:#95a5a6; }
+    .action-btn:disabled { opacity:.5; cursor:not-allowed; }
+
+    /* Cut countdown */
+    .cut-countdown { align-self:center; padding:6px 10px; border-radius:10px; background:rgba(241,196,15,.15); border:1px solid rgba(241,196,15,.4); color:#f1c40f; font-weight:800; font-size:13px; }
+    @keyframes pulseRed { 0%{transform:scale(1);opacity:1} 50%{transform:scale(1.2);opacity:.6} 100%{transform:scale(1);opacity:1} }
+    .cut-countdown.urgent { color:#e74c3c; border-color:rgba(231,76,60,.6); background:rgba(231,76,60,.15); animation:pulseRed .8s infinite; }
+
+    /* Scoreboard (simple) */
+    .scores { position:absolute; top:20px; right:20px; background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.2); border-radius:12px; padding:12px; min-width:180px; }
+    .scores h3 { text-align:center; color:#ffd700; margin-bottom:8px; }
+    .scores .row { display:flex; justify-content:space-between; padding:4px 2px; }
   </style>
 </head>
 <body>
-  <!-- Login Screen -->
+  <!-- Login -->
   <div id="loginScreen" class="login-screen">
     <div class="login-card">
       <h1>🃏 Lakdi</h1>
       <div class="login-form">
-        <input type="text" id="playerName" placeholder="Enter your name">
-        <input type="text" id="roomCode" placeholder="Room code (leave empty to create)">
-        <button class="btn btn-primary" onclick="joinRoom()">Join Game</button>
-        <button class="btn btn-secondary" onclick="createRoom()">Create New Room</button>
-        <div id="loginMessage"></div>
+        <input id="playerName" placeholder="Enter your name" maxlength="20" />
+        <input id="roomCode" placeholder="Room code (leave empty to create)" maxlength="8" />
+        <button class="btn btn-primary" id="joinBtn">Join Game</button>
+        <button class="btn btn-secondary" id="createBtn">Create New Room</button>
+        <div id="loginStatus" class="status"></div>
       </div>
     </div>
   </div>
@@ -89,21 +68,31 @@
   <!-- Lobby -->
   <div id="lobbyScreen" class="lobby-screen hidden">
     <h2>Game Lobby</h2>
-    <div>Room Code: <span id="displayRoomCode" class="room-code"></span></div>
+    <div class="room">
+      <div>Room Code:</div>
+      <div id="displayRoomCode" class="room-code">------</div>
+      <div id="lobbyStatus" class="status"></div>
+    </div>
     <div id="playersList"></div>
-    <button class="btn btn-primary" id="startGameBtn" onclick="startGame()" disabled>Start Game</button>
+    <button id="startGameBtn" class="btn btn-primary" disabled>Start Game</button>
   </div>
 
-  <!-- Game Screen -->
-  <div id="gameScreen" class="game-table hidden">
+  <!-- Game -->
+  <div id="gameScreen" class="table hidden">
+    <div class="scores">
+      <h3>Scores</h3>
+      <div id="scoresList"></div>
+    </div>
+
     <div class="player-hand" id="playerHand"></div>
+
     <div class="action-bar">
-      <button class="action-btn discard" id="discardBtn" onclick="discard()" disabled>Discard</button>
-      <button class="action-btn draw-stock" id="drawStockBtn" onclick="drawStock()" disabled>Draw Stock</button>
-      <button class="action-btn draw-discard" id="drawDiscardBtn" onclick="drawDiscard()" disabled>Draw Discard</button>
-      <button class="action-btn lakdi" id="lakdiBtn" onclick="callLakdi()" disabled>Call Lakdi</button>
-      <button class="action-btn cut" id="cutBtn" onclick="attemptCut()" disabled>Cut</button>
-      <button class="action-btn pass" id="passBtn" onclick="passCut()" disabled>Pass</button>
+      <button class="action-btn discard" id="discardBtn" disabled>Discard</button>
+      <button class="action-btn draw-stock" id="drawStockBtn" disabled>Draw Stock</button>
+      <button class="action-btn draw-discard" id="drawDiscardBtn" disabled>Draw Discard</button>
+      <button class="action-btn lakdi" id="lakdiBtn" disabled>Call Lakdi</button>
+      <button class="action-btn cut" id="cutBtn" disabled>Cut</button>
+      <button class="action-btn pass" id="passBtn" disabled>Pass</button>
       <span id="cutCountdown" class="cut-countdown hidden">⏳ 7s</span>
     </div>
   </div>
@@ -111,38 +100,241 @@
   <!-- Socket.IO -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
-    // 🚀 Replace with your Render server URL
-    const socket = io("https://lakdi.onrender.com", {
-    transports: ["polling", "websocket"],  // allow both
-    upgrade: true,                         // default, but explicit
-    path: "/socket.io/"                    // default, but explicit
-  });
+    // ====== CONFIG ======
+    const SOCKET_URL = "https://lakdi.onrender.com"; // << replace if needed
+    const socket = io(SOCKET_URL, { transports: ["polling","websocket"], upgrade: true });
 
-    // Example event bindings
-    function createRoom() {
-      const name = document.getElementById("playerName").value;
-      socket.emit("create_room", { name });
-    }
-    function joinRoom() {
-      const name = document.getElementById("playerName").value;
-      const code = document.getElementById("roomCode").value;
-      socket.emit("join_room", { name, code });
-    }
-    function startGame() { socket.emit("start_game"); }
-    function discard() { socket.emit("discard"); }
-    function drawStock() { socket.emit("draw_stock"); }
-    function drawDiscard() { socket.emit("draw_discard"); }
-    function callLakdi() { socket.emit("call_lakdi"); }
-    function attemptCut() { socket.emit("attempt_cut"); }
-    function passCut() { socket.emit("pass_cut"); }
+    // ====== STATE (client-side mirror) ======
+    let me = null;          // { id, name }
+    let room = null;        // full room object from server
+    let myHand = [];        // convenience cache
+    let cutTimer = null;
 
-    // Listen for updates from server
-    socket.on("room_update", (room) => {
-      console.log("Room update:", room);
+    // ====== DOM ======
+    const el = (id) => document.getElementById(id);
+    const loginScreen  = el("loginScreen");
+    const lobbyScreen  = el("lobbyScreen");
+    const gameScreen   = el("gameScreen");
+    const loginStatus  = el("loginStatus");
+    const lobbyStatus  = el("lobbyStatus");
+    const displayRoom  = el("displayRoomCode");
+    const playersList  = el("playersList");
+    const startBtn     = el("startGameBtn");
+    const playerHandEl = el("playerHand");
+    const scoresList   = el("scoresList");
+    const discardBtn   = el("discardBtn");
+    const drawStockBtn = el("drawStockBtn");
+    const drawDiscardBtn= el("drawDiscardBtn");
+    const lakdiBtn     = el("lakdiBtn");
+    const cutBtn       = el("cutBtn");
+    const passBtn      = el("passBtn");
+    const cutCountdown = el("cutCountdown");
+
+    // ====== UTIL ======
+    const suitSym = { hearts:"♥", diamonds:"♦", clubs:"♣", spades:"♠" };
+    function cardColor(s){ return (s==="hearts"||s==="diamonds") ? "red":"black"; }
+    function cardText(c){ return `${c?.rank || "?"}${suitSym[c?.suit] || ""}`; }
+    function safe(obj, path, fallback){
+      try{ return path.split('.').reduce((o,k)=> (o?o[k]:undefined), obj) ?? fallback; }catch{ return fallback; }
+    }
+
+    // ====== RENDER ======
+    function show(screen){
+      loginScreen.classList.add("hidden");
+      lobbyScreen.classList.add("hidden");
+      gameScreen.classList.add("hidden");
+      screen.classList.remove("hidden");
+    }
+
+    function renderLobby(){
+      if (!room) return;
+      displayRoom.textContent = room.code || "------";
+      const players = room.players || [];
+      playersList.innerHTML = players.map(p => `<div>👤 ${p.name}${p.isHost?" 👑":""} — ${p.score ?? 0} pts</div>`).join("");
+      // Host can start if >=2 players
+      const canStart = (players.length >= 2) && players.find(p=>p.id===me?.id)?.isHost;
+      startBtn.disabled = !canStart;
+      lobbyStatus.textContent = canStart ? "You can start the game." : "Waiting for more players or host…";
+    }
+
+    function renderScores(){
+      const players = safe(room,"players",[]);
+      scoresList.innerHTML = players.map(p => `<div class="row"><span>${p.name}${p.isHost?" 👑":""}</span><span>${p.score ?? 0}</span></div>`).join("");
+    }
+
+    function renderHand(){
+      // my hand is server-provided in room.hands[me.id]
+      const hand = safe(room, `hands.${me?.id}`, []);
+      myHand = hand;
+      playerHandEl.innerHTML = hand.map((c,i)=>(
+        `<div class="card ${cardColor(c.suit)}" data-idx="${i}">${cardText(c)}</div>`
+      )).join("");
+
+      // simple select-on-click to discard; allow selecting 1–3 same rank
+      [...playerHandEl.children].forEach(div=>{
+        div.onclick = () => {
+          div.classList.toggle("selected");
+        };
+      });
+    }
+
+    function renderGame(){
+      if (!room) return;
+      renderScores();
+      renderHand();
+
+      const isMyTurn = room.currentTurn === me?.id;
+      const myCount  = safe(room, `hands.${me?.id}.length`, 0);
+      const discardTopExists = (safe(room,"discard.length",0) > 0);
+
+      // Rules: must discard (1–3 same rank) when you have 3; then must draw 1 (stock or discard).
+      discardBtn.disabled     = !isMyTurn || myCount !== 3;
+      drawStockBtn.disabled   = !isMyTurn || myCount !== 2;
+      drawDiscardBtn.disabled = !isMyTurn || myCount !== 2 || !discardTopExists;
+
+      // Lakdi: not on first turn; only at START/POST_DRAW windows
+      const canLakdi = isMyTurn && (room.turnsElapsed > 0) && (room.lakdiWindow==="START"||room.lakdiWindow==="POST_DRAW") && myCount===3;
+      lakdiBtn.disabled = !canLakdi;
+
+      // Cut phase buttons
+      const inCut = !!room.cutPhase;
+      const iAmCaller = room.lakdiCallerId === me?.id;
+      const iActed = !!safe(room, `cutActed.${me?.id}`, false);
+      const beforeDeadline = Date.now() <= (room.cutDeadline || 0);
+
+      cutBtn.disabled  = !(inCut && !iAmCaller && !iActed && beforeDeadline);
+      passBtn.disabled = !(inCut && !iAmCaller && !iActed && beforeDeadline);
+
+      // Countdown
+      if (inCut) startCutCountdown(room); else stopCutCountdown();
+    }
+
+    // ====== CUT COUNTDOWN ======
+    function startCutCountdown(roomState){
+      stopCutCountdown();
+      cutCountdown.classList.remove("hidden");
+      const tick = () => {
+        const msLeft = Math.max(0, (roomState.cutDeadline || 0) - Date.now());
+        const sLeft = Math.ceil(msLeft / 1000);
+        cutCountdown.textContent = `⏳ ${sLeft}s`;
+        if (sLeft <= 2) cutCountdown.classList.add("urgent"); else cutCountdown.classList.remove("urgent");
+        if (msLeft <= 0) stopCutCountdown();
+      };
+      tick();
+      cutTimer = setInterval(tick, 250);
+    }
+    function stopCutCountdown(){
+      if (cutTimer) clearInterval(cutTimer);
+      cutTimer = null;
+      cutCountdown.classList.add("hidden");
+      cutCountdown.classList.remove("urgent");
+    }
+
+    // ====== SOCKET EVENTS FROM SERVER ======
+    socket.on("connect", () => {
+      loginStatus.textContent = "Connected ✔";
+      el("joinBtn").disabled = false;
+      el("createBtn").disabled = false;
     });
-    socket.on("game_update", (game) => {
-      console.log("Game update:", game);
+    socket.on("disconnect", () => {
+      loginStatus.textContent = "Disconnected. Check server.";
     });
+
+    // The server should emit the whole room state on any change:
+    //   { code, players[], hands{playerId:Card[]}, stock[], discard[], currentTurn, gamePhase, endThreshold, turnsElapsed, lakdiWindow, cutPhase, cutDeadline, cutActed, lakdiCallerId }
+    socket.on("room_state", (st) => {
+      room = st || null;
+      if (!room) return;
+      // If I'm not registered yet but server knows me, capture my identity:
+      if (!me && room.players) {
+        const guess = room.players.find(p => p.id === socket.id);
+        if (guess) me = { id: guess.id, name: guess.name };
+      }
+      if (room.gamePhase === "lobby") {
+        show(lobbyScreen);
+        renderLobby();
+      } else if (room.gamePhase === "playing" || room.gamePhase === "showdown") {
+        show(gameScreen);
+        renderGame();
+      }
+    });
+
+    // ====== UI → SOCKET (CLIENT ACTIONS) ======
+    el("createBtn").onclick = () => {
+      const name = el("playerName").value.trim();
+      if (!name) { loginStatus.textContent = "Enter a name first."; return; }
+      socket.emit("create_room", { name }, (resp) => {
+        if (resp?.error) { loginStatus.textContent = resp.error; return; }
+        me = resp?.me || me;
+        show(lobbyScreen);
+        lobbyStatus.textContent = "Room created. Share the code!";
+      });
+    };
+
+    el("joinBtn").onclick = () => {
+      const name = el("playerName").value.trim();
+      const code = el("roomCode").value.trim().toUpperCase();
+      if (!name) { loginStatus.textContent = "Enter a name first."; return; }
+      if (!code)  { loginStatus.textContent = "Enter a room code or click Create."; return; }
+      socket.emit("join_room", { code, name }, (resp) => {
+        if (resp?.error) { loginStatus.textContent = resp.error; return; }
+        me = resp?.me || me;
+        show(lobbyScreen);
+        lobbyStatus.textContent = "Joined room!";
+      });
+    };
+
+    startBtn.onclick = () => {
+      const endThreshold = 200; // or read from a dropdown if you add one
+      socket.emit("start_game", { code: room?.code, endThreshold }, (resp)=>{
+        if (resp?.error) lobbyStatus.textContent = resp.error;
+      });
+    };
+
+    // Discard: send selected cards (must be 1–3 same rank)
+    discardBtn.onclick = () => {
+      const selectedIdx = [...playerHandEl.children]
+        .map((el,i)=> el.classList.contains("selected") ? i : -1)
+        .filter(i=> i>=0);
+      if (selectedIdx.length < 1 || selectedIdx.length > 3) return;
+
+      const picked = selectedIdx.map(i => myHand[i]);
+      // client-side check same-rank
+      const same = picked.every(c => c.rank === picked[0].rank);
+      if (!same) return;
+
+      socket.emit("discard", { code: room?.code, cards: picked }, (resp)=>{
+        // could show an error if resp?.error
+      });
+    };
+
+    drawStockBtn.onclick = () => {
+      socket.emit("draw", { code: room?.code, source: "stock" });
+    };
+    drawDiscardBtn.onclick = () => {
+      socket.emit("draw", { code: room?.code, source: "discard" });
+    };
+
+    lakdiBtn.onclick = () => {
+      socket.emit("call_lakdi", { code: room?.code }, (resp)=>{
+        // optional: handle errors
+      });
+    };
+
+    cutBtn.onclick = () => {
+      socket.emit("cut", { code: room?.code }, (resp)=>{ /* handle resp */ });
+    };
+    passBtn.onclick = () => {
+      socket.emit("pass_cut", { code: room?.code }, (resp)=>{ /* handle resp */ });
+    };
+
+    // ====== SAFETY: prevent crashes on unhandled promise rejections ======
+    window.addEventListener("unhandledrejection", e => {
+      console.warn("Unhandled promise:", e.reason);
+    });
+
+    // On first load, wait in login screen until user creates or joins
+    show(loginScreen);
   </script>
 </body>
 </html>
