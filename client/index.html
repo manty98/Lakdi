@@ -112,8 +112,11 @@
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
     // 🚀 Replace with your Render server URL
-    const SOCKET_URL = "wss://lakdi.onrender.com";
-    const socket = io(SOCKET_URL, { transports: ["websocket"] });
+    const socket = io("https://lakdi.onrender.com", {
+    transports: ["polling", "websocket"],  // allow both
+    upgrade: true,                         // default, but explicit
+    path: "/socket.io/"                    // default, but explicit
+  });
 
     // Example event bindings
     function createRoom() {
