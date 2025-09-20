@@ -1,340 +1,194 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-  <title>Lakdi - Multiplayer Card Game</title>
+  <title>Lakdi</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:linear-gradient(135deg,#1a4f3a,#0d2818); color:#fff; height:100vh; overflow:hidden; }
-
-    .hidden { display:none !important; }
-
-    /* Login */
-    .login-screen { height:100vh; display:flex; align-items:center; justify-content:center; }
-    .login-card { background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2); border-radius:20px; padding:32px; width:min(420px,92%); text-align:center; }
-    .login-card h1 { font-size:2.2rem; margin-bottom:16px; }
-    .login-form { display:flex; flex-direction:column; gap:12px; }
-    .login-form input { padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,.3); background:rgba(255,255,255,.08); color:#fff; }
-    .btn { padding:12px 16px; border:none; border-radius:10px; font-weight:700; cursor:pointer; }
-    .btn-primary { background:linear-gradient(45deg,#ff6b6b,#ee5a24); color:#fff; }
-    .btn-secondary { background:linear-gradient(45deg,#4834d4,#686de0); color:#fff; }
-    .status { margin-top:8px; min-height:20px; opacity:.9; }
-
-    /* Lobby */
-    .lobby-screen { padding:18px; }
-    .room { margin:10px 0 20px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.2); border-radius:12px; padding:12px; }
-    .room-code { font-size:24px; color:#ffd700; letter-spacing:2px; font-weight:800; }
-
-    /* Game table */
-    .table { position:relative; height:100vh; display:flex; align-items:center; justify-content:center; }
-    .player-hand { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:10px; }
-    .card { width:80px; height:110px; background:#fff; color:#111; border-radius:10px; border:2px solid #ccc; display:flex; align-items:center; justify-content:center; font-weight:800; }
-    .card.red { color:#e74c3c; }
-    .card.black { color:#2c3e50; }
-
-    .action-bar { position:absolute; bottom:150px; left:50%; transform:translateX(-50%); display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
-    .action-btn { padding:10px 14px; border:none; border-radius:10px; font-weight:700; color:#fff; }
-    .discard { background:#e74c3c; } .draw-stock { background:#3498db; } .draw-discard { background:#f39c12; }
-    .lakdi { background:#2ecc71; } .cut { background:#9b59b6; } .pass { background:#95a5a6; }
-    .action-btn:disabled { opacity:.5; cursor:not-allowed; }
-
-    /* Cut countdown */
-    .cut-countdown { align-self:center; padding:6px 10px; border-radius:10px; background:rgba(241,196,15,.15); border:1px solid rgba(241,196,15,.4); color:#f1c40f; font-weight:800; font-size:13px; }
-    @keyframes pulseRed { 0%{transform:scale(1);opacity:1} 50%{transform:scale(1.2);opacity:.6} 100%{transform:scale(1);opacity:1} }
-    .cut-countdown.urgent { color:#e74c3c; border-color:rgba(231,76,60,.6); background:rgba(231,76,60,.15); animation:pulseRed .8s infinite; }
-
-    /* Scoreboard (simple) */
-    .scores { position:absolute; top:20px; right:20px; background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.2); border-radius:12px; padding:12px; min-width:180px; }
-    .scores h3 { text-align:center; color:#ffd700; margin-bottom:8px; }
-    .scores .row { display:flex; justify-content:space-between; padding:4px 2px; }
+    body { margin:0; font-family:sans-serif; background:#0d2818; color:#fff }
+    main { max-width:1100px; margin:auto; padding:20px }
+    .hidden { display:none!important }
+    .panel { background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15);
+      border-radius:14px; padding:14px; margin-bottom:14px }
+    input { padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,.3);
+      background:rgba(255,255,255,.1); color:#fff }
+    button { padding:8px 14px; border:none; border-radius:8px; cursor:pointer;
+      font-weight:bold; margin:4px; background:#2563eb; color:#fff }
+    button:disabled { opacity:.5; cursor:not-allowed }
+    #playersList .player { display:flex; justify-content:space-between; align-items:center;
+      margin:4px 0; padding:4px; border-radius:6px; background:rgba(255,255,255,.05) }
+    .backs { display:flex; gap:2px }
+    .back { width:14px; height:20px; background:linear-gradient(135deg,#2c3e50,#34495e);
+      border:1px solid #3498db; border-radius:2px }
+    .card { display:inline-flex; align-items:center; justify-content:center; min-width:80px;
+      height:108px; background:#fff; color:#111; border:2px solid #cbd5e1; border-radius:10px;
+      cursor:pointer; margin:4px }
+    .card.selected { transform:translateY(-8px); border-color:#0ea5e9; background:#f0f9ff }
+    .card.red { color:#e74c3c }
+    #log { white-space:pre; background:#111; color:#0f0; padding:10px; border-radius:8px;
+      max-height:200px; overflow:auto }
+    /* Showdown */
+    .modal { position:fixed; inset:0; background:rgba(0,0,0,.7); display:flex;
+      align-items:center; justify-content:center }
+    .modal .content { background:#143828; border:1px solid rgba(255,255,255,.2);
+      border-radius:14px; max-width:960px; width:92%; padding:16px; max-height:85vh; overflow:auto }
+    .hands { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top:10px }
+    .handBox { background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.1);
+      border-radius:12px; padding:10px }
+    .handBox.winner { border-color:#10b981; background:rgba(16,185,129,.25) }
+    .handBox.penalty { border-color:#e74c3c; background:rgba(231,76,60,.25) }
+    .mini { width:60px; height:84px; background:#fff; color:#111; border:2px solid #cbd5e1;
+      border-radius:8px; display:flex; align-items:center; justify-content:center;
+      font-weight:800; margin:2px }
+    .mini.red { color:#e74c3c }
   </style>
 </head>
 <body>
-  <!-- Login -->
-  <div id="loginScreen" class="login-screen">
-    <div class="login-card">
-      <h1>🃏 Lakdi</h1>
-      <div class="login-form">
-        <input id="playerName" placeholder="Enter your name" maxlength="20" />
-        <input id="roomCode" placeholder="Room code (leave empty to create)" maxlength="8" />
-        <button class="btn btn-primary" id="joinBtn">Join Game</button>
-        <button class="btn btn-secondary" id="createBtn">Create New Room</button>
-        <div id="loginStatus" class="status"></div>
-      </div>
-    </div>
-  </div>
+<main>
+  <h1>🃏 Lakdi</h1>
 
   <!-- Lobby -->
-  <div id="lobbyScreen" class="lobby-screen hidden">
-    <h2>Game Lobby</h2>
-    <div class="room">
-      <div>Room Code:</div>
-      <div id="displayRoomCode" class="room-code">------</div>
-      <div id="lobbyStatus" class="status"></div>
-    </div>
-    <div id="playersList"></div>
-    <button id="startGameBtn" class="btn btn-primary" disabled>Start Game</button>
-  </div>
+  <section id="lobby" class="panel">
+    <input id="playerName" placeholder="Your name" />
+    <button id="createBtn">Create Room</button>
+    <input id="roomCode" placeholder="Room code" />
+    <button id="joinBtn">Join Room</button>
+    <div id="lobbyMsg"></div>
+  </section>
 
   <!-- Game -->
-  <div id="gameScreen" class="table hidden">
-    <div class="scores">
-      <h3>Scores</h3>
-      <div id="scoresList"></div>
+  <section id="table" class="hidden">
+    <div id="playersPanel" class="panel">
+      <div>Room: <span id="roomCodeDisplay"></span></div>
+      <button id="startBtn">Start</button>
+      <div id="playersList"></div>
+      <div>
+        <button id="discardBtn" disabled>Discard</button>
+        <button id="drawStockBtn" disabled>Draw Stock</button>
+        <button id="drawDiscardBtn" disabled>Draw Discard</button>
+        <button id="lakdiBtn" disabled>Call Lakdi</button>
+        <button id="cutBtn" disabled>Cut</button>
+        <button id="passBtn" disabled>Pass</button>
+        <button id="nextRoundBtn" disabled>Next Round</button>
+      </div>
     </div>
+    <div class="panel">
+      <h3>Your Hand</h3>
+      <div id="hand"></div>
+      <h3>Log</h3>
+      <pre id="log"></pre>
+    </div>
+  </section>
 
-    <div class="player-hand" id="playerHand"></div>
-
-    <div class="action-bar">
-      <button class="action-btn discard" id="discardBtn" disabled>Discard</button>
-      <button class="action-btn draw-stock" id="drawStockBtn" disabled>Draw Stock</button>
-      <button class="action-btn draw-discard" id="drawDiscardBtn" disabled>Draw Discard</button>
-      <button class="action-btn lakdi" id="lakdiBtn" disabled>Call Lakdi</button>
-      <button class="action-btn cut" id="cutBtn" disabled>Cut</button>
-      <button class="action-btn pass" id="passBtn" disabled>Pass</button>
-      <span id="cutCountdown" class="cut-countdown hidden">⏳ 7s</span>
+  <!-- Showdown -->
+  <div id="showdownModal" class="modal hidden">
+    <div class="content">
+      <h2>Round Results</h2>
+      <div id="showdownInfo"></div>
+      <div class="hands" id="handsGrid"></div>
+      <button id="closeShowdown">Close</button>
     </div>
   </div>
+</main>
 
-  <!-- Socket.IO -->
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <script>
-    // ====== CONFIG ======
-    const SOCKET_URL = "https://lakdi.onrender.com"; // << replace if needed
-    const socket = io(SOCKET_URL, { transports: ["polling","websocket"], upgrade: true });
+<script>
+const socket = io("https://lakdi.onrender.com",{transports:["polling","websocket"]});
+let me=null, room=null, selected=[], hasDiscarded=false;
 
-    // ====== STATE (client-side mirror) ======
-    let me = null;          // { id, name }
-    let room = null;        // full room object from server
-    let myHand = [];        // convenience cache
-    let cutTimer = null;
+const $=id=>document.getElementById(id);
+const log=(...a)=>{ $("log").textContent+=a.join(" ")+"\\n"; $("log").scrollTop=$("log").scrollHeight; };
+const color=s=>s==="hearts"||s==="diamonds"?"red":"black";
 
-    // ====== DOM ======
-    const el = (id) => document.getElementById(id);
-    const loginScreen  = el("loginScreen");
-    const lobbyScreen  = el("lobbyScreen");
-    const gameScreen   = el("gameScreen");
-    const loginStatus  = el("loginStatus");
-    const lobbyStatus  = el("lobbyStatus");
-    const displayRoom  = el("displayRoomCode");
-    const playersList  = el("playersList");
-    const startBtn     = el("startGameBtn");
-    const playerHandEl = el("playerHand");
-    const scoresList   = el("scoresList");
-    const discardBtn   = el("discardBtn");
-    const drawStockBtn = el("drawStockBtn");
-    const drawDiscardBtn= el("drawDiscardBtn");
-    const lakdiBtn     = el("lakdiBtn");
-    const cutBtn       = el("cutBtn");
-    const passBtn      = el("passBtn");
-    const cutCountdown = el("cutCountdown");
-
-    // ====== UTIL ======
-    const suitSym = { hearts:"♥", diamonds:"♦", clubs:"♣", spades:"♠" };
-    function cardColor(s){ return (s==="hearts"||s==="diamonds") ? "red":"black"; }
-    function cardText(c){ return `${c?.rank || "?"}${suitSym[c?.suit] || ""}`; }
-    function safe(obj, path, fallback){
-      try{ return path.split('.').reduce((o,k)=> (o?o[k]:undefined), obj) ?? fallback; }catch{ return fallback; }
-    }
-
-    // ====== RENDER ======
-    function show(screen){
-      loginScreen.classList.add("hidden");
-      lobbyScreen.classList.add("hidden");
-      gameScreen.classList.add("hidden");
-      screen.classList.remove("hidden");
-    }
-
-    function renderLobby(){
-      if (!room) return;
-      displayRoom.textContent = room.code || "------";
-      const players = room.players || [];
-      playersList.innerHTML = players.map(p => `<div>👤 ${p.name}${p.isHost?" 👑":""} — ${p.score ?? 0} pts</div>`).join("");
-      // Host can start if >=2 players
-      const canStart = (players.length >= 2) && players.find(p=>p.id===me?.id)?.isHost;
-      startBtn.disabled = !canStart;
-      lobbyStatus.textContent = canStart ? "You can start the game." : "Waiting for more players or host…";
-    }
-
-    function renderScores(){
-      const players = safe(room,"players",[]);
-      scoresList.innerHTML = players.map(p => `<div class="row"><span>${p.name}${p.isHost?" 👑":""}</span><span>${p.score ?? 0}</span></div>`).join("");
-    }
-
-    function renderHand(){
-      // my hand is server-provided in room.hands[me.id]
-      const hand = safe(room, `hands.${me?.id}`, []);
-      myHand = hand;
-      playerHandEl.innerHTML = hand.map((c,i)=>(
-        `<div class="card ${cardColor(c.suit)}" data-idx="${i}">${cardText(c)}</div>`
-      )).join("");
-
-      // simple select-on-click to discard; allow selecting 1–3 same rank
-      [...playerHandEl.children].forEach(div=>{
-        div.onclick = () => {
-          div.classList.toggle("selected");
-        };
-      });
-    }
-
-    function renderGame(){
-      if (!room) return;
-      renderScores();
+function renderHand(){
+  const h=room.hands?.[me.id]||[]; const d=$("hand"); d.innerHTML="";
+  h.forEach(c=>{
+    const e=document.createElement("div"); e.className="card "+color(c.suit);
+    e.textContent=c.rank+" "+c.suit;
+    if(selected.find(x=>x.rank===c.rank&&x.suit===c.suit)) e.classList.add("selected");
+    e.onclick=()=>{ 
+      const i=selected.findIndex(x=>x.rank===c.rank&&x.suit===c.suit);
+      if(i>=0) selected.splice(i,1); else selected.push(c); 
       renderHand();
+    };
+    d.appendChild(e);
+  });
+}
+function renderPlayers(){
+  const ul=$("playersList"); ul.innerHTML="";
+  (room.players||[]).forEach(p=>{
+    const row=document.createElement("div"); row.className="player";
+    const left=document.createElement("span"); left.textContent=`${p.name} (${p.score})`;
+    const right=document.createElement("span");
+    const backs=document.createElement("span"); backs.className="backs";
+    const hand=room.hands?.[p.id]||[];
+    for(let i=0;i<hand.length;i++){ backs.appendChild(document.createElement("span")).className="back"; }
+    const badge=document.createElement("span"); badge.textContent=`${hand.length} cards`;
+    right.appendChild(backs); right.appendChild(badge);
+    row.appendChild(left); row.appendChild(right);
+    ul.appendChild(row);
+  });
+}
+function render(){ if(!room)return; renderPlayers(); renderHand(); }
 
-      const isMyTurn = room.currentTurn === me?.id;
-      const myCount  = safe(room, `hands.${me?.id}.length`, 0);
-      const discardTopExists = (safe(room,"discard.length",0) > 0);
-
-      // Rules: must discard (1–3 same rank) when you have 3; then must draw 1 (stock or discard).
-      discardBtn.disabled     = !isMyTurn || myCount !== 3;
-      drawStockBtn.disabled   = !isMyTurn || myCount !== 2;
-      drawDiscardBtn.disabled = !isMyTurn || myCount !== 2 || !discardTopExists;
-
-      // Lakdi: not on first turn; only at START/POST_DRAW windows
-      const canLakdi = isMyTurn && (room.turnsElapsed > 0) && (room.lakdiWindow==="START"||room.lakdiWindow==="POST_DRAW") && myCount===3;
-      lakdiBtn.disabled = !canLakdi;
-
-      // Cut phase buttons
-      const inCut = !!room.cutPhase;
-      const iAmCaller = room.lakdiCallerId === me?.id;
-      const iActed = !!safe(room, `cutActed.${me?.id}`, false);
-      const beforeDeadline = Date.now() <= (room.cutDeadline || 0);
-
-      cutBtn.disabled  = !(inCut && !iAmCaller && !iActed && beforeDeadline);
-      passBtn.disabled = !(inCut && !iAmCaller && !iActed && beforeDeadline);
-
-      // Countdown
-      if (inCut) startCutCountdown(room); else stopCutCountdown();
-    }
-
-    // ====== CUT COUNTDOWN ======
-    function startCutCountdown(roomState){
-      stopCutCountdown();
-      cutCountdown.classList.remove("hidden");
-      const tick = () => {
-        const msLeft = Math.max(0, (roomState.cutDeadline || 0) - Date.now());
-        const sLeft = Math.ceil(msLeft / 1000);
-        cutCountdown.textContent = `⏳ ${sLeft}s`;
-        if (sLeft <= 2) cutCountdown.classList.add("urgent"); else cutCountdown.classList.remove("urgent");
-        if (msLeft <= 0) stopCutCountdown();
-      };
-      tick();
-      cutTimer = setInterval(tick, 250);
-    }
-    function stopCutCountdown(){
-      if (cutTimer) clearInterval(cutTimer);
-      cutTimer = null;
-      cutCountdown.classList.add("hidden");
-      cutCountdown.classList.remove("urgent");
-    }
-
-    // ====== SOCKET EVENTS FROM SERVER ======
-    socket.on("connect", () => {
-      loginStatus.textContent = "Connected ✔";
-      el("joinBtn").disabled = false;
-      el("createBtn").disabled = false;
+// --- showdown rendering
+function showShowdown(summary){
+  $("showdownModal").classList.remove("hidden");
+  const grid=$("handsGrid"); grid.innerHTML="";
+  const info=$("showdownInfo");
+  const winnerName=room.players.find(p=>p.id===summary.winnerId)?.name||"";
+  info.textContent=`Winner: ${winnerName}`;
+  room.players.forEach(p=>{
+    const hb=document.createElement("div"); hb.className="handBox";
+    if(summary.winnerId===p.id) hb.classList.add("winner");
+    if(summary.penalties[p.id]===50) hb.classList.add("penalty");
+    const title=document.createElement("div");
+    title.innerHTML=`<strong>${p.name}</strong> — round score: ${summary.penalties[p.id]}`;
+    const minis=document.createElement("div");
+    (room.hands[p.id]||[]).forEach(c=>{
+      const m=document.createElement("div"); m.className="mini "+color(c.suit);
+      m.textContent=c.rank+" "+c.suit;
+      minis.appendChild(m);
     });
-    socket.on("disconnect", () => {
-      loginStatus.textContent = "Disconnected. Check server.";
-    });
+    hb.appendChild(title); hb.appendChild(minis);
+    grid.appendChild(hb);
+  });
+}
+$("closeShowdown").onclick=()=>{ $("showdownModal").classList.add("hidden"); };
 
-    // The server should emit the whole room state on any change:
-    //   { code, players[], hands{playerId:Card[]}, stock[], discard[], currentTurn, gamePhase, endThreshold, turnsElapsed, lakdiWindow, cutPhase, cutDeadline, cutActed, lakdiCallerId }
-    socket.on("room_state", (st) => {
-      room = st || null;
-      if (!room) return;
-      // If I'm not registered yet but server knows me, capture my identity:
-      if (!me && room.players) {
-        const guess = room.players.find(p => p.id === socket.id);
-        if (guess) me = { id: guess.id, name: guess.name };
-      }
-      if (room.gamePhase === "lobby") {
-        show(lobbyScreen);
-        renderLobby();
-      } else if (room.gamePhase === "playing" || room.gamePhase === "showdown") {
-        show(gameScreen);
-        renderGame();
-      }
-    });
+// --- Lobby buttons
+$("createBtn").onclick=()=>{
+  const name=$("playerName").value||"Player";
+  socket.emit("create_room",{name},res=>{
+    if(res?.error){ $("lobbyMsg").textContent=res.error; return; }
+    me=res.me; $("roomCodeDisplay").textContent=res.code;
+    $("lobby").classList.add("hidden"); $("table").classList.remove("hidden");
+  });
+};
+$("joinBtn").onclick=()=>{
+  const name=$("playerName").value||"Player";
+  const code=($("roomCode").value||"").trim().toUpperCase();
+  socket.emit("join_room",{code,name},res=>{
+    if(res?.error){ $("lobbyMsg").textContent=res.error; return; }
+    me=res.me; $("roomCodeDisplay").textContent=res.code;
+    $("lobby").classList.add("hidden"); $("table").classList.remove("hidden");
+  });
+};
 
-    // ====== UI → SOCKET (CLIENT ACTIONS) ======
-    el("createBtn").onclick = () => {
-      const name = el("playerName").value.trim();
-      if (!name) { loginStatus.textContent = "Enter a name first."; return; }
-      socket.emit("create_room", { name }, (resp) => {
-        if (resp?.error) { loginStatus.textContent = resp.error; return; }
-        me = resp?.me || me;
-        show(lobbyScreen);
-        lobbyStatus.textContent = "Room created. Share the code!";
-      });
-    };
+// --- Buttons
+$("startBtn").onclick=()=> socket.emit("start_game",{code:room?.code,endThreshold:200});
+$("discardBtn").onclick=()=> socket.emit("discard",{code:room.code,cards:selected},()=>{hasDiscarded=true;selected=[];});
+$("drawStockBtn").onclick=()=> socket.emit("draw",{code:room.code,source:"stock"},()=>{hasDiscarded=false;});
+$("drawDiscardBtn").onclick=()=> socket.emit("draw",{code:room.code,source:"discard"},()=>{hasDiscarded=false;});
+$("lakdiBtn").onclick=()=> socket.emit("call_lakdi",{code:room.code});
+$("cutBtn").onclick=()=> socket.emit("cut",{code:room.code});
+$("passBtn").onclick=()=> socket.emit("pass_cut",{code:room.code});
+$("nextRoundBtn").onclick=()=> socket.emit("next_round",{code:room.code});
 
-    el("joinBtn").onclick = () => {
-      const name = el("playerName").value.trim();
-      const code = el("roomCode").value.trim().toUpperCase();
-      if (!name) { loginStatus.textContent = "Enter a name first."; return; }
-      if (!code)  { loginStatus.textContent = "Enter a room code or click Create."; return; }
-      socket.emit("join_room", { code, name }, (resp) => {
-        if (resp?.error) { loginStatus.textContent = resp.error; return; }
-        me = resp?.me || me;
-        show(lobbyScreen);
-        lobbyStatus.textContent = "Joined room!";
-      });
-    };
-
-    startBtn.onclick = () => {
-      const endThreshold = 200; // or read from a dropdown if you add one
-      socket.emit("start_game", { code: room?.code, endThreshold }, (resp)=>{
-        if (resp?.error) lobbyStatus.textContent = resp.error;
-      });
-    };
-
-    // Discard: send selected cards (must be 1–3 same rank)
-    discardBtn.onclick = () => {
-      const selectedIdx = [...playerHandEl.children]
-        .map((el,i)=> el.classList.contains("selected") ? i : -1)
-        .filter(i=> i>=0);
-      if (selectedIdx.length < 1 || selectedIdx.length > 3) return;
-
-      const picked = selectedIdx.map(i => myHand[i]);
-      // client-side check same-rank
-      const same = picked.every(c => c.rank === picked[0].rank);
-      if (!same) return;
-
-      socket.emit("discard", { code: room?.code, cards: picked }, (resp)=>{
-        // could show an error if resp?.error
-      });
-    };
-
-    drawStockBtn.onclick = () => {
-      socket.emit("draw", { code: room?.code, source: "stock" });
-    };
-    drawDiscardBtn.onclick = () => {
-      socket.emit("draw", { code: room?.code, source: "discard" });
-    };
-
-    lakdiBtn.onclick = () => {
-      socket.emit("call_lakdi", { code: room?.code }, (resp)=>{
-        // optional: handle errors
-      });
-    };
-
-    cutBtn.onclick = () => {
-      socket.emit("cut", { code: room?.code }, (resp)=>{ /* handle resp */ });
-    };
-    passBtn.onclick = () => {
-      socket.emit("pass_cut", { code: room?.code }, (resp)=>{ /* handle resp */ });
-    };
-
-    // ====== SAFETY: prevent crashes on unhandled promise rejections ======
-    window.addEventListener("unhandledrejection", e => {
-      console.warn("Unhandled promise:", e.reason);
-    });
-
-    // On first load, wait in login screen until user creates or joins
-    show(loginScreen);
-  </script>
+// --- Socket
+socket.on("room_state",st=>{ room=st; if(!me) me=st.players.find(p=>p.id===socket.id); render(); });
+socket.on("showdown_summary",s=> showShowdown(s));
+socket.on("connect",()=> log("Connected:",socket.id));
+socket.on("connect_error",err=> log("connect_error",err.message||err));
+</script>
 </body>
 </html>
