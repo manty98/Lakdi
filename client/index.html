@@ -2,480 +2,402 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Lakdi</title>
+  <title>Lakdi - Multiplayer Card Game</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <style>
-    *{box-sizing:border-box} body{margin:0;font-family:sans-serif;background:#0d2818;color:#fff}
-    main{max-width:1100px;margin:auto;padding:20px}
-    .hidden{display:none!important}
-    .panel{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:14px;margin-bottom:14px}
-    input{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);color:#fff}
-    button{padding:8px 14px;border:none;border-radius:8px;cursor:pointer;font-weight:bold;margin:4px;background:#2563eb;color:#fff}
-    button:disabled{opacity:.5;cursor:not-allowed}
-    /* Opponents row: no overlap, wraps nicely */
-    #playersList{display:flex;flex-wrap:wrap;gap:10px}
-    #playersList .player{display:flex;justify-content:space-between;align-items:center;gap:8px;min-width:230px;padding:8px;border-radius:8px;background:rgba(255,255,255,.05)}
-    .player.current{outline:2px solid #10b981}
-    .backs{display:flex;gap:2px}
-    .back{width:14px;height:20px;background:linear-gradient(135deg,#2c3e50,#34495e);border:1px solid #3498db;border-radius:2px}
-    .card{display:inline-flex;align-items:center;justify-content:center;min-width:80px;height:108px;background:#fff;color:#111;border:2px solid #cbd5e1;border-radius:10px;cursor:pointer;margin:4px;font-size:26px;font-weight:bold}
-    .card.selected{transform:translateY(-8px);border-color:#0ea5e9;background:#f0f9ff}
-    .card.red{color:#e74c3c} .card.black{color:#111}
-    #log{white-space:pre;background:#111;color:#0f0;padding:10px;border-radius:8px;max-height:200px;overflow:auto}
-    /* showdown */
-    .modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:1000}
-    .modal .content{background:#143828;border:1px solid rgba(255,255,255,.2);border-radius:14px;max-width:960px;width:92%;padding:16px;max-height:85vh;overflow:auto}
-    .hands{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:10px}
-    .handBox{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px}
-    .handBox.winner{border-color:#10b981;background:rgba(16,185,129,.25)}
-    .handBox.penalty{border-color:#e74c3c;background:rgba(231,76,60,.25)}
-    .mini{width:60px;height:84px;background:#fff;color:#111;border:2px solid #cbd5e1;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;margin:2px;font-size:18px}
+    :root{
+      --bg1:#1a4f3a; --bg2:#0d2818; --gold:#ffd700; --panel:rgba(255,255,255,.08);
+      --panel-b:rgba(255,255,255,.15); --muted:rgba(255,255,255,.6);
+      --btn-red:#ee5a24; --btn-blue:#4f46e5; --btn-green:#2ecc71;
+      --card-b:#cbd5e1; --card-shadow:0 12px 24px rgba(0,0,0,.25);
+    }
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:linear-gradient(135deg,var(--bg1),var(--bg2));color:#fff;overflow:hidden}
+
+    /* Status pill */
+    .connection-status{position:fixed;top:16px;left:16px;padding:10px 14px;border-radius:12px;background:rgba(46,204,113,.16);border:1px solid #2ecc71;color:#2ecc71;font-weight:700;z-index:50}
+
+    /* ---------- LOBBY (as in your screenshot) ---------- */
+    .login-wrap{height:100%;display:flex;align-items:center;justify-content:center;padding:20px}
+    .login-card{width:min(560px,92vw);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:22px;padding:32px 28px;box-shadow:var(--card-shadow)}
+    .brand{display:flex;justify-content:center;align-items:center;gap:14px;margin-bottom:22px}
+    .brand .logo{width:46px;height:46px;border-radius:10px;background:var(--gold)}
+    .brand .title{font-size:48px;font-weight:900;color:var(--gold)}
+    .field{margin:12px 0}
+    .input{width:100%;padding:14px 16px;border-radius:12px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.08);color:#fff;font-size:16px;outline:none}
+    .input::placeholder{color:var(--muted)}
+    .button{width:100%;padding:16px 18px;border:none;border-radius:14px;color:#fff;font-weight:900;letter-spacing:.2px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 8px 18px rgba(0,0,0,.2);transition:transform .1s ease}
+    .button:active{transform:translateY(1px)}
+    .btn-join{background:linear-gradient(45deg,#ff6b6b,var(--btn-red))}
+    .btn-create{background:linear-gradient(45deg,#4834d4,var(--btn-blue))}
+    .btn-cpu{background:linear-gradient(45deg,#27ae60,var(--btn-green))}
+    .stack{display:grid;gap:14px;margin-top:10px}
+
+    /* ---------- GAME TABLE (your layout) ---------- */
+    .game-container{height:100%;display:flex;flex-direction:column;position:relative}
+    .scoreboard{position:absolute;top:20px;right:20px;background:rgba(0,0,0,.85);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.2);border-radius:16px;padding:18px 16px;min-width:220px;z-index:5}
+    .scoreboard h3{margin:0 0 10px;color:var(--gold);text-align:center}
+    .score-item{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:8px;margin:6px 0;background:rgba(255,255,255,.06)}
+    .score-item.winner{background:rgba(46,204,113,.28)}
+    .game-table{flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:22px}
+    .players-container{position:absolute;inset:0}
+    .player-seat{position:absolute;display:flex;flex-direction:column;align-items:center;gap:10px;min-width:120px}
+    .player-seat.active{animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.75}}
+    .player-info{background:var(--panel);border:1px solid var(--panel-b);border-radius:14px;padding:10px 14px;text-align:center}
+    .player-name{font-weight:800;margin-bottom:4px}
+    .player-score{font-size:14px;color:var(--gold)}
+    .player-cards{display:flex;gap:6px}
+    .card-back{width:30px;height:42px;border-radius:6px;background:linear-gradient(135deg,#2c3e50,#34495e);border:1px solid #3498db}
+    /* seats around */
+    .seat-top{top:8%;left:50%;transform:translateX(-50%)}
+    .seat-r1{top:20%;right:10%}
+    .seat-r2{top:50%;right:5%;transform:translateY(-50%)}
+    .seat-b1{bottom:20%;right:10%}
+    .seat-l1{bottom:20%;left:10%}
+    .seat-l2{top:50%;left:5%;transform:translateY(-50%)}
+
+    .table-center{position:relative;display:flex;align-items:center;justify-content:center;gap:20px}
+    .pile{width:90px;height:120px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:transform .12s ease;font-weight:700}
+    .pile:hover{transform:scale(1.05)}
+    .stock{background:linear-gradient(135deg,#2c3e50,#34495e);border:2px solid #3498db;color:#fff}
+    .discard{background:#fff;border:2px solid #e74c3c;color:#111}
+    .badge{position:absolute;top:-12px;right:-12px;background:rgba(255,215,0,.18);border:2px solid #ffd700;color:#ffd700;border-radius:999px;padding:6px 8px;font-weight:900}
+
+    /* your action bar */
+    .action-bar{position:absolute;bottom:170px;left:50%;transform:translateX(-50%);display:flex;gap:14px;flex-wrap:wrap;z-index:5}
+    .action-btn{padding:12px 18px;border:none;border-radius:12px;font-weight:900;cursor:pointer;transition:transform .1s ease}
+    .action-btn:active{transform:translateY(1px)}
+    .action-btn:disabled{opacity:.5;cursor:not-allowed}
+    .btn-discard{background:#b94a3e;color:#fff}
+    .btn-draw-s{background:#2c7be5;color:#fff}
+    .btn-draw-d{background:#b58900;color:#fff}
+    .btn-lakdi{background:#239b56;color:#fff}
+
+    .player-hand{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:12px;z-index:5}
+    .card{width:90px;height:120px;background:#fff;border-radius:12px;border:2px solid var(--card-b);display:flex;align-items:center;justify-content:center;color:#111;font-size:28px;font-weight:900;cursor:pointer;transition:transform .18s ease, box-shadow .18s ease}
+    .card.red{color:#e74c3c}
+    .card.selected{transform:translateY(-14px);box-shadow:0 12px 20px rgba(0,0,0,.25);border-color:#ffd700}
+
+    /* timer */
+    .turn-timer{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:60px;height:60px;border-radius:50%;border:4px solid rgba(255,215,0,.28);display:flex;align-items:center;justify-content:center;color:#ffd700;font-weight:900}
+    .timer-circle{position:absolute;inset:-4px;border-radius:50%;border:4px solid transparent;border-top-color:#ffd700;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* Modals */
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;z-index:40}
+    .modal-content{background:linear-gradient(135deg,var(--bg1),var(--bg2));border:1px solid rgba(255,255,255,.3);border-radius:18px;padding:22px 20px;width:min(920px,92vw);max-height:82vh;overflow:auto}
+    .hands-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:14px}
+    .hand-display{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px}
+    .hand-display.winner{border-color:#2ecc71;background:rgba(46,204,113,.22)}
+    .hand-display.penalty{border-color:#e74c3c;background:rgba(231,76,60,.22)}
+    .mini{width:50px;height:70px;background:#fff;border:2px solid var(--card-b);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;margin:2px}
     .mini.red{color:#e74c3c}
-    /* table bits kept minimal (stock/discard/timer) */
-    .table-bar{display:flex;gap:8px;align-items:center;margin-top:8px}
-    .pile{padding:6px 10px;background:#173423;border:1px solid rgba(255,255,255,.2);border-radius:8px}
-    .timer{margin-left:auto}
-    /* cut section */
-    #cutBar{margin-top:6px}
+    .hidden{display:none!important}
+
+    @media (max-width:768px){
+      .player-hand .card{width:74px;height:98px}
+      .action-bar{bottom:144px}
+      .scoreboard{min-width:180px;padding:14px}
+      .pile{width:80px;height:108px}
+    }
   </style>
 </head>
 <body>
-<main>
-  <h1>🃏 Lakdi</h1>
+  <div id="status" class="connection-status">🟢 Ready</div>
 
-  <!-- Lobby -->
-  <section id="lobby" class="panel">
-    <input id="playerName" placeholder="Your name"/>
-    <button id="createBtn">Create Room</button>
-    <input id="roomCode" placeholder="Room code"/>
-    <button id="joinBtn">Join Room</button>
-    <button id="singleBtn" style="background:#10b981">🤖 Play vs Computer</button>
-    <div id="lobbyMsg"></div>
-  </section>
-
-  <!-- Game -->
-  <section id="table" class="hidden">
-    <div id="playersPanel" class="panel">
-      <div>Room: <span id="roomCodeDisplay"></span></div>
-      <button id="startBtn">Start</button>
-
-      <div id="playersList"></div>
-
-      <div class="table-bar">
-        <div class="pile">Stock: <span id="stockCount">0</span></div>
-        <div class="pile">Discard: <span id="discardTop">Empty</span></div>
-        <div class="timer">⏱️ <span id="timer">30</span>s</div>
+  <!-- LOBBY (screenshot) -->
+  <section id="lobby" class="login-wrap">
+    <div class="login-card">
+      <div class="brand">
+        <div class="logo"></div>
+        <div class="title">Lakdi</div>
       </div>
-
-      <div style="margin-top:6px">
-        <button id="discardBtn" disabled>Discard</button>
-        <button id="drawStockBtn" disabled>Draw Stock</button>
-        <button id="drawDiscardBtn" disabled>Draw Discard</button>
-        <button id="lakdiBtn" disabled title="Available after 1st turn">Call Lakdi</button>
+      <div class="field"><input id="nameInput" class="input" placeholder="Enter your name" maxlength="20"/></div>
+      <div class="field"><input id="codeInput" class="input" placeholder="Room code (leave empty to create)" maxlength="6"/></div>
+      <div class="stack">
+        <button id="joinBtn" class="button btn-join">Join Multiplayer</button>
+        <button id="createBtn" class="button btn-create">Create New Room</button>
+        <button id="cpuBtn" class="button btn-cpu">🤖 Play vs Computer</button>
       </div>
-
-      <div id="cutBar" class="hidden">
-        <strong>Cut?</strong>
-        <button id="cutBtn" style="background:#ef4444">Cut</button>
-        <button id="passBtn" style="background:#475569">Pass</button>
-      </div>
-    </div>
-
-    <div class="panel">
-      <h3>Your Hand</h3>
-      <div id="hand"></div>
-      <h3>Log</h3>
-      <pre id="log"></pre>
+      <div id="lobbyMsg" style="margin-top:10px;color:#8ab4ff;font-weight:700"></div>
     </div>
   </section>
 
-  <!-- Showdown -->
-  <div id="showdownModal" class="modal hidden">
-    <div class="content">
+  <!-- GAME -->
+  <section id="game" class="game-container hidden">
+    <div class="scoreboard">
+      <h3>Scores</h3>
+      <div id="scores"></div>
+    </div>
+
+    <div class="game-table">
+      <div id="seats" class="players-container"></div>
+
+      <div class="table-center">
+        <div id="stockPile" class="pile stock"><div>Stock</div><div id="stockCount">0</div></div>
+        <div id="discardPile" class="pile discard"><div id="discardTop">Empty</div></div>
+        <div id="turnTimer" class="turn-timer hidden"><div class="timer-circle"></div><span id="tleft">30</span></div>
+      </div>
+
+      <div class="action-bar">
+        <button id="btnDiscard" class="action-btn btn-discard" disabled>Discard</button>
+        <button id="btnDrawS" class="action-btn btn-draw-s" disabled>Draw Stock</button>
+        <button id="btnDrawD" class="action-btn btn-draw-d" disabled>Draw Discard</button>
+        <button id="btnLakdi" class="action-btn btn-lakdi" disabled title="Available after 1st turn">Call Lakdi</button>
+      </div>
+
+      <div id="hand" class="player-hand"></div>
+    </div>
+  </section>
+
+  <!-- SHOWDOWN -->
+  <div id="showdown" class="modal hidden">
+    <div class="modal-content">
       <h2>Round Results</h2>
-      <div id="showdownInfo"></div>
-      <div class="hands" id="handsGrid"></div>
-      <button id="closeShowdown">Close</button>
+      <div id="handsGrid" class="hands-grid"></div>
+      <div style="text-align:center;margin-top:10px">
+        <button id="closeShowdown" class="button btn-blue" style="background:#2563eb;width:auto;padding:10px 16px;border-radius:10px">Continue</button>
+      </div>
     </div>
   </div>
-</main>
 
-<script>
-/* ========= Core State ========= */
-const sym={hearts:"♥",diamonds:"♦",clubs:"♣",spades:"♠"};
-const isRed=s=>s==="hearts"||s==="diamonds";
-const val=r=>r==="A"?1:r==="J"?11:r==="Q"?12:r==="K"?13:parseInt(r,10);
-const sum=h=>h.reduce((t,c)=>t+val(c.rank),0);
+  <script>
+    /* ---------------- Helpers (UI) ---------------- */
+    const $ = id => document.getElementById(id);
+    const suit = {hearts:"♥",diamonds:"♦",clubs:"♣",spades:"♠"};
+    const isRed = s => (s==="hearts"||s==="diamonds");
+    const val = r => r==="A"?1:r==="J"?11:r==="Q"?12:r==="K"?13:parseInt(r,10);
+    const sum = hand => hand.reduce((a,c)=>a+val(c.rank),0);
+    const label = c => `${c.rank}${suit[c.suit]}`;
 
-const $=id=>document.getElementById(id);
-const log=(...a)=>{ const el=$("log"); el.textContent+=a.join(" ")+"\\n"; el.scrollTop=el.scrollHeight; };
+    /* ---------------- State ---------------- */
+    const socket = io("https://lakdi.onrender.com", { transports: ["websocket","polling"] });
+    let me=null, room=null;
+    let selectedIdx=[];              // selected indices in my hand (for discard)
+    let eligibleDiscardTop=null;     // the previous top-of-discard you may take this turn
+    let timer=null, timeLeft=30;
 
-let state={
-  mode:"lobby",
-  single:false,
-  players:[],
-  myId:null,
-  currentTurn:null,
-  deck:[],
-  hands:{},
-  discard:[],
-  /* NEW: snapshot of top-of-discard available to the current player AFTER they discard */
-  turnPrevTop:null,
-  timer:null, timeLeft:30,
-  firstTurn:true,
-  lakdiCaller:null,
-  cutPhase:false
-};
+    /* ---------------- Lobby actions ---------------- */
+    function showGame(){ $("lobby").classList.add("hidden"); $("game").classList.remove("hidden"); }
+    function showLobby(){ $("lobby").classList.remove("hidden"); $("game").classList.add("hidden"); }
 
-const cardLabel=c=>`${c.rank}${sym[c.suit]}`;
-const buildDeck=(decks=1)=>{
-  const s=['hearts','diamonds','clubs','spades'], r=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-  const d=[]; for(let k=0;k<decks;k++){ for(const ss of s){ for(const rr of r){ d.push({suit:ss,rank:rr}); } } }
-  for(let i=d.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [d[i],d[j]]=[d[j],d[i]]; }
-  return d;
-};
+    $("createBtn").onclick = () => {
+      const name = $("nameInput").value.trim()||"Player";
+      socket.emit("create_room",{name},res=>{
+        if(res?.error){ $("lobbyMsg").textContent=res.error; return; }
+        me=res.me; $("lobbyMsg").textContent=`Room: ${res.code}`;
+        showGame();
+      });
+    };
+    $("joinBtn").onclick = () => {
+      const name = $("nameInput").value.trim()||"Player";
+      const code = ($("codeInput").value||"").trim().toUpperCase();
+      socket.emit("join_room",{name,code},res=>{
+        if(res?.error){ $("lobbyMsg").textContent=res.error; return; }
+        me=res.me; $("lobbyMsg").textContent=`Joined: ${res.code}`;
+        showGame();
+      });
+    };
+    $("cpuBtn").onclick = () => {
+      // Single-player session on server
+      const name = $("nameInput").value.trim()||"Player";
+      socket.emit("single_player",{name},res=>{
+        if(res?.error){ $("lobbyMsg").textContent=res.error; return; }
+        me=res.me; $("lobbyMsg").textContent="Single-player vs bots";
+        showGame();
+      });
+    };
 
-function resetTimerUI(){ $("timer").textContent="30"; }
-function startTimer(){
-  clearInterval(state.timer); state.timeLeft=30; $("timer").textContent=state.timeLeft;
-  state.timer=setInterval(()=>{
-    state.timeLeft--; $("timer").textContent=state.timeLeft;
-    if(state.timeLeft<=0){
-      clearInterval(state.timer);
-      // auto: discard lowest single then draw stock
-      if(state.currentTurn===state.myId && handOf(state.myId).length===3){
-        const h=handOf(state.myId);
-        const idx = h.reduce((min,i,ix,arr)=> val(arr[ix].rank)<val(arr[min].rank)?ix:min,0);
-        setSelected([idx]); doDiscard(); setTimeout(()=> doDraw('stock'), 400);
-      } else if(state.single && state.currentTurn!=="you") {
-        aiTurn();
+    /* ---------------- Rendering ---------------- */
+    function renderAll(){
+      if(!room||!me) return;
+      renderSeats();
+      renderHand();
+      renderScores();
+      renderPiles();
+      updateButtons();
+    }
+    function renderSeats(){
+      const seats=$("seats"); seats.innerHTML="";
+      const others = room.players.filter(p=>p.id!==me.id);
+      const classes = ["seat-top","seat-r1","seat-r2","seat-b1","seat-l1","seat-l2"];
+      others.forEach((p,i)=>{
+        const seat=document.createElement("div");
+        seat.className=`player-seat ${classes[i%classes.length]} ${room.currentTurn===p.id?'active':''}`;
+        const backs = (room.hands[p.id]||[]).length;
+        seat.innerHTML = `
+          <div class="player-info">
+            <div class="player-name">${p.name}${p.isHost?' 👑':''}</div>
+            <div class="player-score">${p.score||0} pts</div>
+          </div>
+          <div class="player-cards">${Array(backs).fill(0).map(()=>'<div class="card-back"></div>').join('')}</div>
+        `;
+        seats.appendChild(seat);
+      });
+    }
+    function renderHand(){
+      const wrap=$("hand"); wrap.innerHTML="";
+      const mine = room.hands?.[me.id]||[];
+      mine.forEach((c,i)=>{
+        const div=document.createElement("div");
+        div.className=`card ${isRed(c.suit)?'red':''} ${selectedIdx.includes(i)?'selected':''}`;
+        div.textContent = label(c);
+        div.onclick = () => onCardClick(i);
+        wrap.appendChild(div);
+      });
+    }
+    function renderScores(){
+      const list=$("scores"); list.innerHTML="";
+      const sorted=[...room.players].sort((a,b)=>(a.score||0)-(b.score||0));
+      sorted.forEach((p,i)=>{
+        const el=document.createElement("div");
+        el.className=`score-item ${i===0?'winner':''}`;
+        el.innerHTML=`<span>${p.name}${p.isHost?' 👑':''}</span><span>${p.score||0}</span>`;
+        list.appendChild(el);
+      });
+    }
+    function renderPiles(){
+      $("stockCount").textContent = room.stockCount ?? (room.stock?.length||0);
+      const top = room.discardTop || (room.discard?.at(-1)) || null;
+      $("discardTop").textContent = top ? label(top) : "Empty";
+    }
+
+    /* ---------------- Selection & validation ---------------- */
+    function onCardClick(i){
+      if(room.currentTurn!==me.id) return;
+      const mine = room.hands?.[me.id]||[];
+      const already = selectedIdx.includes(i);
+      if(already){ selectedIdx = selectedIdx.filter(x=>x!==i); }
+      else{
+        if(selectedIdx.length){
+          const r0 = mine[selectedIdx[0]].rank;
+          if(mine[i].rank!==r0) selectedIdx=[]; // enforce same rank
+        }
+        if(selectedIdx.length<3) selectedIdx.push(i);
       }
+      renderHand(); updateButtons();
     }
-  },1000);
-}
-function stopTimer(){ clearInterval(state.timer); }
-
-/* ===== Lobby (local demo) ===== */
-$("createBtn").onclick=()=>{
-  const name=$("playerName").value.trim()||"You";
-  state.single=false;
-  state.players=[{id:"you",name,score:0},{id:"p2",name:"P2",score:0}];
-  state.myId="you"; $("roomCodeDisplay").textContent="LOCAL";
-  $("lobbyMsg").textContent="Room created (local demo).";
-  showGame(); startRound();
-};
-$("joinBtn").onclick=()=>{
-  const name=$("playerName").value.trim()||"You";
-  state.single=false;
-  state.players=[{id:"you",name,score:0},{id:"p2",name:"P2",score:0},{id:"p3",name:"P3",score:0}];
-  state.myId="you"; $("roomCodeDisplay").textContent="LOCAL";
-  $("lobbyMsg").textContent="Joined (local demo).";
-  showGame(); startRound();
-};
-$("singleBtn").onclick=()=>{
-  const name=$("playerName").value.trim()||"You";
-  state.single=true;
-  state.players=[{id:"you",name,score:0},{id:"ai1",name:"Asha (easy)",score:0},{id:"ai2",name:"Bala (medium)",score:0},{id:"ai3",name:"Chetan (hard)",score:0}];
-  state.myId="you"; $("roomCodeDisplay").textContent="CPU";
-  $("lobbyMsg").textContent="Single-player vs bots.";
-  showGame(); startRound();
-};
-$("startBtn").onclick=()=> startRound();
-
-function showLobby(){ $("lobby").classList.remove("hidden"); $("table").classList.add("hidden"); }
-function showGame(){ $("lobby").classList.add("hidden"); $("table").classList.remove("hidden"); }
-
-/* ===== Round setup ===== */
-function startRound(){
-  state.mode="playing";
-  stopTimer(); resetTimerUI();  /* <-- timer hard reset every round */
-  const decks=Math.ceil(state.players.length/6)||1;
-  state.deck=buildDeck(decks);
-  state.hands={};
-  state.players.forEach(p=>{ state.hands[p.id]=[state.deck.pop(),state.deck.pop(),state.deck.pop()]; });
-
-  // Initial visible discard (previously rejected card)
-  state.discard=[state.deck.pop()];
-  state.currentTurn=state.players[0].id;
-  /* NEW: snapshot the top card that is eligible to be taken from discard this turn */
-  state.turnPrevTop = state.discard[state.discard.length-1];
-  state.firstTurn=true;
-  state.lakdiCaller=null;
-  state.cutPhase=false;
-
-  renderAll();
-  if(state.currentTurn===state.myId) startTimer();
-  else if(state.single) aiTurn();
-}
-
-/* ===== Rendering ===== */
-function handOf(id){ return state.hands[id]||[]; }
-
-function renderPlayers(){
-  const list=$("playersList"); list.innerHTML="";
-  state.players.forEach(p=>{
-    const row=document.createElement("div"); row.className="player"+(state.currentTurn===p.id?" current":"");
-    const left=document.createElement("span"); left.textContent=`${p.name} (${p.score||0})`;
-    const right=document.createElement("span");
-    const backs=document.createElement("span"); backs.className="backs";
-    const len=handOf(p.id).length;
-    for(let i=0;i<len;i++){ const b=document.createElement("span"); b.className="back"; backs.appendChild(b); }
-    const badge=document.createElement("span"); badge.style.marginLeft="6px"; badge.textContent=`${len} cards`;
-    right.appendChild(backs); right.appendChild(badge);
-    row.appendChild(left); row.appendChild(right);
-    list.appendChild(row);
-  });
-}
-
-let selected=[]; // indices in my hand
-function setSelected(a){ selected=a; renderHand(); }
-
-function renderHand(){
-  const wrap=$("hand"); wrap.innerHTML="";
-  const mine=handOf(state.myId);
-  mine.forEach((c,i)=>{
-    const el=document.createElement("div"); el.className=`card ${isRed(c.suit)?'red':'black'}`; el.textContent=cardLabel(c);
-    if(selected.includes(i)) el.classList.add("selected");
-    el.onclick=()=>onCardClick(i);
-    wrap.appendChild(el);
-  });
-  updateButtons();
-}
-
-function renderBars(){
-  $("stockCount").textContent=state.deck.length;
-  $("discardTop").textContent = state.discard.length ? cardLabel(state.discard[state.discard.length-1]) : "Empty";
-}
-
-function renderAll(){ renderPlayers(); renderHand(); renderBars(); updateButtons(); }
-
-/* ===== Selection: 1–3 of the same rank only ===== */
-function onCardClick(i){
-  if(state.currentTurn!==state.myId) return;
-  const mine=handOf(state.myId); if(mine.length!==3) return;
-
-  const already=selected.includes(i);
-  if(already){
-    selected = selected.filter(x=>x!==i);
-  }else{
-    const r = mine[i].rank;
-    if(selected.length){
-      const r0 = mine[selected[0]].rank;
-      if(r!==r0) selected=[];  // force same rank
+    function validDiscard(){
+      if(selectedIdx.length<1 || selectedIdx.length>3) return false;
+      if(selectedIdx.length===1) return true;
+      const mine = room.hands?.[me.id]||[];
+      const r0 = mine[selectedIdx[0]].rank;
+      return selectedIdx.every(ix => mine[ix].rank===r0);
     }
-    if(selected.length<3) selected.push(i);
-  }
-  renderHand();
-}
 
-function validDiscard(){
-  if(selected.length<1 || selected.length>3) return false;
-  if(selected.length===1) return true;
-  const mine=handOf(state.myId);
-  const r0=mine[selected[0]].rank;
-  return selected.every(ix=>mine[ix].rank===r0);
-}
+    /* ---------------- Buttons enablement ---------------- */
+    function updateButtons(){
+      const myTurn = room.currentTurn===me.id;
+      const myLen = (room.hands?.[me.id]||[]).length;
+      // FIX 1: allow draw after discarding 1/2/3 => enable draw if hand has <=2 and it's your turn
+      const canDraw = myTurn && myLen <= 2;
 
-/* ===== Buttons ===== */
-function updateButtons(){
-  const myTurn = state.currentTurn===state.myId;
-  const mineLen = handOf(state.myId).length;
-
-  $("discardBtn").disabled = !(myTurn && mineLen===3 && validDiscard());
-
-  const canDraw = myTurn && mineLen===2;
-  $("drawStockBtn").disabled = !canDraw;
-
-  /* NEW: only allow Draw Discard if the turn snapshot exists (the last rejected card from previous player) */
-  $("drawDiscardBtn").disabled = !(canDraw && state.turnPrevTop);
-
-  $("lakdiBtn").disabled = !(myTurn && !state.firstTurn && mineLen===3 && !state.cutPhase);
-  $("cutBar").classList.toggle("hidden", !(state.cutPhase && state.lakdiCaller!==state.myId));
-}
-
-/* ===== Actions ===== */
-$("discardBtn").onclick = ()=> doDiscard();
-$("drawStockBtn").onclick = ()=> doDraw('stock');
-$("drawDiscardBtn").onclick = ()=> doDraw('discard');
-$("lakdiBtn").onclick = ()=> doLakdi(state.myId);
-$("cutBtn").onclick = ()=> doCutAttempt(state.myId);
-$("passBtn").onclick = ()=> doPass(state.myId);
-
-function doDiscard(){
-  if(!validDiscard()) return;
-  const mine=handOf(state.myId);
-
-  // Remove selected and push LAST one as the visible discard
-  const indices=[...selected].sort((a,b)=>a-b);
-  const thrown = indices.map(i=>mine[i]);
-  for(let k=indices.length-1;k>=0;k--) mine.splice(indices[k],1);
-
-  // The card visible to everyone becomes the LAST discarded
-  state.discard.push(thrown[thrown.length-1]);
-
-  selected=[];
-  renderHand(); renderBars(); updateButtons();
-}
-
-function reshuffleIfNeeded(){
-  if(state.deck.length===0 && state.discard.length>1){
-    const top = state.discard.pop();
-    state.deck = [...state.discard];
-    state.discard=[top];
-    for(let i=state.deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [state.deck[i],state.deck[j]]=[state.deck[j],state.deck[i]]; }
-  }
-}
-
-function doDraw(src){
-  if(state.currentTurn!==state.myId) return;
-  const mine=handOf(state.myId); if(mine.length!==2) return;
-
-  if(src==='stock'){
-    reshuffleIfNeeded();
-    if(state.deck.length){ mine.push(state.deck.pop()); }
-  }else{
-    /* NEW: draw the "last rejected card" from before you discarded (turnPrevTop), not your own discard */
-    if(!state.turnPrevTop) return;
-    // remove that specific card from the pile (it is now under your own discard)
-    const idx = state.discard.findIndex(c=>c===state.turnPrevTop);
-    if(idx>=0){ const [card]=state.discard.splice(idx,1); mine.push(card); }
-    state.turnPrevTop=null; // used
-  }
-
-  state.firstTurn=false;
-  renderHand(); renderBars(); updateButtons();
-  endTurn();
-}
-
-function beginTurnFor(nextId){
-  state.currentTurn = nextId;
-  /* NEW: snapshot the currently visible discard as this player's eligible draw-from-discard */
-  state.turnPrevTop = state.discard[state.discard.length-1] || null;
-  renderPlayers(); updateButtons(); stopTimer(); resetTimerUI();
-  if(state.currentTurn===state.myId) startTimer();
-  else if(state.single) aiTurn();
-}
-
-function endTurn(){
-  const idx=state.players.findIndex(p=>p.id===state.currentTurn);
-  const next = state.players[(idx+1)%state.players.length].id;
-  beginTurnFor(next);
-}
-
-/* ===== Lakdi / Cut ===== */
-function doLakdi(callerId){
-  state.lakdiCaller=callerId;
-  state.cutPhase=true; updateButtons(); stopTimer();
-
-  if(state.single){
-    if(callerId!==state.myId){
-      log("Bot called Lakdi. You may Cut or Pass.");
-    }else{
-      setTimeout(()=> botsCutPass(), 400);
+      $("btnDiscard").disabled = !(myTurn && validDiscard());
+      $("btnDrawS").disabled = !canDraw;
+      // FIX 2: can only take previous top-of-discard (snapshotted at turn start)
+      $("btnDrawD").disabled = !(canDraw && eligibleDiscardTop);
+      $("btnLakdi").disabled = !(myTurn && !room.firstTurn && myLen===3);
     }
-  }else{
-    setTimeout(()=> botsCutPass(), 400);
-  }
-}
 
-function doCutAttempt(cutterId){
-  const totals = computeTotals();
-  const valid = totals[cutterId] <= totals[state.lakdiCaller];
-  if(valid){ endRound({penaltyOn: state.lakdiCaller}); }
-  else{ endRound({penaltyOn: cutterId}); }
-}
-function doPass(){ endRound({penaltyOn:null}); }
+    /* ---------------- Timer (resets each turn/round) ---------------- */
+    function startTimer(){
+      clearInterval(timer); timeLeft=30;
+      $("turnTimer").classList.remove("hidden");
+      $("tleft").textContent=timeLeft;
+      timer=setInterval(()=>{
+        timeLeft--; $("tleft").textContent=timeLeft;
+        if(timeLeft<=0){
+          clearInterval(timer); $("turnTimer").classList.add("hidden");
+          // auto: ask server to auto-move
+          socket.emit("auto_play",{code:room.code});
+        }
+      },1000);
+    }
+    function stopTimer(){ clearInterval(timer); $("turnTimer").classList.add("hidden"); }
 
-function botsCutPass(){
-  const totals=computeTotals(), caller=state.lakdiCaller;
-  const opps=state.players.filter(p=>p.id!==caller);
-  const cutter = opps.find(p=> totals[p.id] <= totals[caller]);
-  if(cutter) endRound({penaltyOn: caller});
-  else endRound({penaltyOn: null});
-}
+    /* ---------------- Actions -> server ---------------- */
+    $("btnDiscard").onclick = () => {
+      if(!validDiscard()) return;
+      const mine = room.hands?.[me.id]||[];
+      const cards = selectedIdx.map(ix=>mine[ix]);
+      socket.emit("discard",{code:room.code,cards},() => { selectedIdx=[]; });
+    };
+    $("btnDrawS").onclick = () => socket.emit("draw",{code:room.code,source:"stock"});
+    $("btnDrawD").onclick = () => socket.emit("draw",{code:room.code,source:"discard"});
+    $("btnLakdi").onclick = () => socket.emit("call_lakdi",{code:room.code});
 
-function computeTotals(){ const t={}; state.players.forEach(p=> t[p.id]=sum(handOf(p.id))); return t; }
+    // Pile click shortcuts
+    $("stockPile").onclick = () => { if(!$("btnDrawS").disabled) $("btnDrawS").click(); };
+    $("discardPile").onclick = () => { if(!$("btnDrawD").disabled) $("btnDrawD").click(); };
 
-function endRound({penaltyOn}){
-  const totals = computeTotals();
-  const winnerId = Object.entries(totals).sort((a,b)=>a[1]-b[1])[0][0];
+    /* ---------------- Socket events ---------------- */
+    socket.on("connect",()=>{ $("status").textContent="🟢 Connected"; });
+    socket.on("connect_error",e=>{ $("status").textContent="🔴 Disconnected"; });
 
-  state.players.forEach(p=>{
-    let add = (p.id===winnerId)?0:totals[p.id];
-    if(p.id===penaltyOn) add += 50; // flat 50
-    p.score = (p.score||0)+add;
-  });
+    // Main room state from server
+    socket.on("room_state",st=>{
+      const prev = room;
+      room = st;
+      if(!me) me = st.players.find(p=>p.id===socket.id);
 
-  renderShowdown({winnerId, totals, penaltyOn});
-}
-
-function renderShowdown({winnerId, totals, penaltyOn}){
-  $("showdownInfo").textContent = `Winner: ${state.players.find(p=>p.id===winnerId)?.name||''}`;
-  const grid=$("handsGrid"); grid.innerHTML="";
-  state.players.forEach(p=>{
-    const box=document.createElement("div");
-    box.className="handBox"+(p.id===winnerId?" winner":"")+(penaltyOn===p.id?" penalty":"");
-    const cards = handOf(p.id).map(c=>`<div class="mini ${isRed(c.suit)?'red':''}">${cardLabel(c)}</div>`).join("");
-    box.innerHTML = `
-      <div><strong>${p.name}</strong></div>
-      <div style="display:flex;flex-wrap:wrap">${cards}</div>
-      <div>Round: ${(p.id===winnerId?0:totals[p.id]) + (penaltyOn===p.id?50:0)}</div>
-      ${p.id===winnerId?'<div style="color:#10b981;font-weight:700">Winner</div>':''}
-      ${penaltyOn===p.id?'<div style="color:#ef4444;font-weight:700">Penalty +50</div>':''}
-    `;
-    grid.appendChild(box);
-  });
-  $("showdownModal").classList.remove("hidden");
-}
-
-$("closeShowdown").onclick=()=>{
-  $("showdownModal").classList.add("hidden");
-  // End condition (fixed 200 here)
-  const max=Math.max(...state.players.map(p=>p.score||0));
-  if(max>=200){ log("Game over."); return; }
-  startRound();
-};
-
-/* ===== AI (uses same turnPrevTop rule) ===== */
-function aiTurn(){
-  if(!state.single || state.currentTurn===state.myId) return;
-  const aiId = state.currentTurn;
-
-  // snapshot eligible discard for AI this turn
-  const prevTop = state.turnPrevTop;
-
-  setTimeout(()=>{
-    const h=handOf(aiId);
-    // choose discard: prefer pairs/triples, else highest
-    const map={}; h.forEach((c,i)=>{ (map[c.rank]??=[]).push(i); });
-    let toThrowIdx = Object.values(map).find(a=>a.length>=2) || [ h.reduce((m,_,ix)=> val(h[ix].rank)>val(h[m].rank)?ix:m,0) ];
-    const thrownCard = h[toThrowIdx[toThrowIdx.length-1]];
-    toThrowIdx.sort((a,b)=>b-a).forEach(i=>h.splice(i,1));
-    state.discard.push(thrownCard);
-    renderBars();
-
-    setTimeout(()=>{
-      // choose draw: MAY draw prevTop only (not own discard)
-      const chooseDiscard = prevTop && val(prevTop.rank)<=4; // simple heuristic
-      if(chooseDiscard){
-        // remove that specific prevTop from pile (it sits under the new top now)
-        const idx = state.discard.findIndex(c=>c===prevTop);
-        if(idx>=0){ const [card]=state.discard.splice(idx,1); h.push(card); }
-      }else{
-        if(state.deck.length===0) reshuffleIfNeeded();
-        if(state.deck.length) h.push(state.deck.pop());
+      // snapshot previous top-of-discard at the beginning of MY TURN
+      if(!prev || prev.currentTurn!==st.currentTurn){
+        if(st.currentTurn===me?.id){
+          eligibleDiscardTop = st.discardPrevTop || st.discardTop || (st.discard?.at(-1)) || null;
+          startTimer();
+        }else{
+          stopTimer();
+        }
+        // reset selection on turn change
+        selectedIdx=[];
       }
-      state.firstTurn=false;
-      // next player
-      const curIdx=state.players.findIndex(p=>p.id===aiId);
-      const nextId=state.players[(curIdx+1)%state.players.length].id;
-      beginTurnFor(nextId);
-    },500);
-  },500);
-}
 
-/* ===== Boot ===== */
-document.addEventListener('DOMContentLoaded',()=>{ showLobby(); });
-</script>
+      renderAll();
+    });
+
+    // Showdown summary -> open modal and display hands/totals
+    socket.on("showdown_summary",(msg)=>{
+      // msg: {hands: {pid:[cards]}, results:{winner, penalties{}}}
+      const grid=$("handsGrid"); grid.innerHTML="";
+      const winner = msg.results.winner;
+
+      room.players.forEach(p=>{
+        const box=document.createElement("div");
+        box.className="hand-display"+(p.id===winner?' winner':'')+(msg.results.penalties[p.id]===50?' penalty':'');
+        const cards=(msg.hands[p.id]||[]).map(c=>`<div class="mini ${isRed(c.suit)?'red':''}">${label(c)}</div>`).join('');
+        const tot = (p.id===winner?0:sum(msg.hands[p.id]||[])) + (msg.results.penalties[p.id]===50?50:0);
+        box.innerHTML = `
+          <div class="player-name" style="font-weight:900">${p.name}</div>
+          <div style="display:flex;flex-wrap:wrap">${cards}</div>
+          <div>Total: ${tot}</div>
+          ${p.id===winner?'<div style="color:#2ecc71;font-weight:900">Winner!</div>':''}
+          ${msg.results.penalties[p.id]===50?'<div style="color:#e74c3c;font-weight:900">Penalty +50</div>':''}
+        `;
+        grid.appendChild(box);
+      });
+
+      $("showdown").classList.remove("hidden");
+    });
+
+    $("closeShowdown").onclick = ()=> {
+      $("showdown").classList.add("hidden");
+      // ask server to start next round (server enforces endThreshold)
+      socket.emit("next_round",{code:room.code});
+    };
+
+    /* -------------- Keyboard helpers -------------- */
+    document.addEventListener('keydown',e=>{
+      if($("game").classList.contains("hidden")) return;
+      if(e.key==='d'||e.key==='D'){ if(!$("btnDiscard").disabled) $("btnDiscard").click(); }
+      if(e.key==='s'||e.key==='S'){ if(!$("btnDrawS").disabled) $("btnDrawS").click(); }
+      if(e.key==='f'||e.key==='F'){ if(!$("btnDrawD").disabled) $("btnDrawD").click(); }
+      if(e.key==='l'||e.key==='L'){ if(!$("btnLakdi").disabled) $("btnLakdi").click(); }
+    });
+
+    /* -------------- Initial focus -------------- */
+    document.addEventListener('DOMContentLoaded',()=> $("nameInput").focus());
+  </script>
 </body>
 </html>
