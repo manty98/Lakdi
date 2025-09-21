@@ -20,13 +20,22 @@
     .backs { display:flex; gap:2px }
     .back { width:14px; height:20px; background:linear-gradient(135deg,#2c3e50,#34495e);
       border:1px solid #3498db; border-radius:2px }
-    .card { display:inline-flex; align-items:center; justify-content:center; min-width:80px;
-      height:108px; background:#fff; color:#111; border:2px solid #cbd5e1; border-radius:10px;
-      cursor:pointer; margin:4px }
+
+    /* Card visuals with suit symbols + corners */
+    .card {
+      position:relative; display:inline-flex; align-items:center; justify-content:center;
+      min-width:80px; height:108px; background:#fff; color:#111; border:2px solid #cbd5e1;
+      border-radius:10px; cursor:pointer; margin:4px; font-weight:800; font-size:26px;
+    }
     .card.selected { transform:translateY(-8px); border-color:#0ea5e9; background:#f0f9ff }
     .card.red { color:#e74c3c }
+    .corner { position:absolute; font-size:12px; font-weight:800 }
+    .tl { top:6px; left:6px }
+    .br { bottom:6px; right:6px; transform:rotate(180deg) }
+
     #log { white-space:pre; background:#111; color:#0f0; padding:10px; border-radius:8px;
-      max-height:200px; overflow:auto }
+      max-height:220px; overflow:auto }
+
     /* Showdown */
     .modal { position:fixed; inset:0; background:rgba(0,0,0,.7); display:flex;
       align-items:center; justify-content:center }
@@ -37,10 +46,15 @@
       border-radius:12px; padding:10px }
     .handBox.winner { border-color:#10b981; background:rgba(16,185,129,.25) }
     .handBox.penalty { border-color:#e74c3c; background:rgba(231,76,60,.25) }
-    .mini { width:60px; height:84px; background:#fff; color:#111; border:2px solid #cbd5e1;
-      border-radius:8px; display:flex; align-items:center; justify-content:center;
-      font-weight:800; margin:2px }
+    .mini {
+      position:relative; width:60px; height:84px; background:#fff; color:#111;
+      border:2px solid #cbd5e1; border-radius:8px; display:flex; align-items:center; justify-content:center;
+      font-weight:800; margin:2px; font-size:18px;
+    }
     .mini.red { color:#e74c3c }
+    .cnr { position:absolute; font-size:10px; font-weight:800 }
+    .cnr.tl { top:4px; left:4px }
+    .cnr.br { bottom:4px; right:4px; transform:rotate(180deg) }
   </style>
 </head>
 <body>
@@ -60,7 +74,7 @@
   <section id="table" class="hidden">
     <div id="playersPanel" class="panel">
       <div>Room: <span id="roomCodeDisplay"></span></div>
-      <button id="startBtn">Start</button>
+      <button id="startBtn" disabled>Start</button>
       <div id="playersList"></div>
       <div>
         <button id="discardBtn" disabled>Discard</button>
@@ -92,70 +106,24 @@
 </main>
 
 <script>
-const socket = io("https://lakdi.onrender.com",{transports:["polling","websocket"]});
-let me=null, room=null, selected=[], hasDiscarded=false;
+/* ===== Config ===== */
+const SOCKET_URL = "https://lakdi.onrender.com";
+const socket = io(SOCKET_URL, { transports:["polling","websocket"] });
 
+/* ===== State ===== */
+let me=null, room=null;
+let selected=[];        // selected cards
+let selectedRank=null;  // lock selection to one rank
+let hasDiscarded=false; // for enabling draw
+let lastState=null;
+
+/* ===== DOM helpers ===== */
 const $=id=>document.getElementById(id);
 const log=(...a)=>{ $("log").textContent+=a.join(" ")+"\\n"; $("log").scrollTop=$("log").scrollHeight; };
-const color=s=>s==="hearts"||s==="diamonds"?"red":"black";
+const sym = { hearts:"♥", diamonds:"♦", clubs:"♣", spades:"♠" };
+const suitClass = s => (s==="hearts"||s==="diamonds") ? "red" : "black";
 
-function renderHand(){
-  const h=room.hands?.[me.id]||[]; const d=$("hand"); d.innerHTML="";
-  h.forEach(c=>{
-    const e=document.createElement("div"); e.className="card "+color(c.suit);
-    e.textContent=c.rank+" "+c.suit;
-    if(selected.find(x=>x.rank===c.rank&&x.suit===c.suit)) e.classList.add("selected");
-    e.onclick=()=>{ 
-      const i=selected.findIndex(x=>x.rank===c.rank&&x.suit===c.suit);
-      if(i>=0) selected.splice(i,1); else selected.push(c); 
-      renderHand();
-    };
-    d.appendChild(e);
-  });
-}
-function renderPlayers(){
-  const ul=$("playersList"); ul.innerHTML="";
-  (room.players||[]).forEach(p=>{
-    const row=document.createElement("div"); row.className="player";
-    const left=document.createElement("span"); left.textContent=`${p.name} (${p.score})`;
-    const right=document.createElement("span");
-    const backs=document.createElement("span"); backs.className="backs";
-    const hand=room.hands?.[p.id]||[];
-    for(let i=0;i<hand.length;i++){ backs.appendChild(document.createElement("span")).className="back"; }
-    const badge=document.createElement("span"); badge.textContent=`${hand.length} cards`;
-    right.appendChild(backs); right.appendChild(badge);
-    row.appendChild(left); row.appendChild(right);
-    ul.appendChild(row);
-  });
-}
-function render(){ if(!room)return; renderPlayers(); renderHand(); }
-
-// --- showdown rendering
-function showShowdown(summary){
-  $("showdownModal").classList.remove("hidden");
-  const grid=$("handsGrid"); grid.innerHTML="";
-  const info=$("showdownInfo");
-  const winnerName=room.players.find(p=>p.id===summary.winnerId)?.name||"";
-  info.textContent=`Winner: ${winnerName}`;
-  room.players.forEach(p=>{
-    const hb=document.createElement("div"); hb.className="handBox";
-    if(summary.winnerId===p.id) hb.classList.add("winner");
-    if(summary.penalties[p.id]===50) hb.classList.add("penalty");
-    const title=document.createElement("div");
-    title.innerHTML=`<strong>${p.name}</strong> — round score: ${summary.penalties[p.id]}`;
-    const minis=document.createElement("div");
-    (room.hands[p.id]||[]).forEach(c=>{
-      const m=document.createElement("div"); m.className="mini "+color(c.suit);
-      m.textContent=c.rank+" "+c.suit;
-      minis.appendChild(m);
-    });
-    hb.appendChild(title); hb.appendChild(minis);
-    grid.appendChild(hb);
-  });
-}
-$("closeShowdown").onclick=()=>{ $("showdownModal").classList.add("hidden"); };
-
-// --- Lobby buttons
+/* ===== Lobby ===== */
 $("createBtn").onclick=()=>{
   const name=$("playerName").value||"Player";
   socket.emit("create_room",{name},res=>{
@@ -174,21 +142,170 @@ $("joinBtn").onclick=()=>{
   });
 };
 
-// --- Buttons
-$("startBtn").onclick=()=> socket.emit("start_game",{code:room?.code,endThreshold:200});
-$("discardBtn").onclick=()=> socket.emit("discard",{code:room.code,cards:selected},()=>{hasDiscarded=true;selected=[];});
-$("drawStockBtn").onclick=()=> socket.emit("draw",{code:room.code,source:"stock"},()=>{hasDiscarded=false;});
-$("drawDiscardBtn").onclick=()=> socket.emit("draw",{code:room.code,source:"discard"},()=>{hasDiscarded=false;});
-$("lakdiBtn").onclick=()=> socket.emit("call_lakdi",{code:room.code});
-$("cutBtn").onclick=()=> socket.emit("cut",{code:room.code});
-$("passBtn").onclick=()=> socket.emit("pass_cut",{code:room.code});
-$("nextRoundBtn").onclick=()=> socket.emit("next_round",{code:room.code});
+/* ===== Rendering ===== */
+function render(){
+  if(!room) return;
+  renderPlayers();
+  renderHand();
+  updateControls();
+}
+function renderPlayers(){
+  const ul=$("playersList"); ul.innerHTML="";
+  const myId = me?.id;
+  const amHost = !!(room.players||[]).find(p=>p.id===myId && p.isHost);
+  // Start enabled only for host, lobby, >=2 players
+  $("startBtn").disabled = !(amHost && room.gamePhase==="lobby" && (room.players||[]).length>=2);
 
-// --- Socket
-socket.on("room_state",st=>{ room=st; if(!me) me=st.players.find(p=>p.id===socket.id); render(); });
-socket.on("showdown_summary",s=> showShowdown(s));
+  (room.players||[]).forEach(p=>{
+    const row=document.createElement("div"); row.className="player";
+    const left=document.createElement("span"); left.textContent=`${p.name} (${p.score})${p.id===room.currentTurn?' ← turn':''}`;
+    const right=document.createElement("span");
+    const backs=document.createElement("span"); backs.className="backs";
+    const hand=room.hands?.[p.id]||[];
+    for(let i=0;i<hand.length;i++){ const b=document.createElement("span"); b.className="back"; backs.appendChild(b); }
+    const badge=document.createElement("span"); badge.textContent=` ${hand.length} cards`;
+    right.appendChild(backs); right.appendChild(badge);
+    row.appendChild(left); row.appendChild(right);
+    ul.appendChild(row);
+  });
+}
+function renderHand(){
+  const hand=room.hands?.[me?.id]||[];
+  const d=$("hand"); d.innerHTML="";
+  hand.forEach(c=>{
+    const el=document.createElement("div");
+    el.className=`card ${suitClass(c.suit)}`;
+    el.innerHTML = `
+      <div class="corner tl">${c.rank} ${sym[c.suit]}</div>
+      ${sym[c.suit]}
+      <div class="corner br">${c.rank} ${sym[c.suit]}</div>
+    `;
+    if(selected.find(x=>x.rank===c.rank&&x.suit===c.suit)) el.classList.add("selected");
+    el.onclick=()=>onCardClick(c, el);
+    d.appendChild(el);
+  });
+}
+
+/* ===== Selection & controls ===== */
+function onCardClick(card, el){
+  // lock to one rank for intuitive "same-rank only" selection
+  if (selected.length===0) selectedRank = card.rank;
+  if (selectedRank && card.rank!==selectedRank){
+    // switch selection to the new rank (clear old)
+    selected = [];
+    selectedRank = card.rank;
+    // clear visuals
+    [...$("hand").children].forEach(c=>c.classList.remove("selected"));
+  }
+  const i=selected.findIndex(x=>x.rank===card.rank&&x.suit===card.suit);
+  if(i>=0){
+    selected.splice(i,1);
+    el.classList.remove("selected");
+    if(selected.length===0) selectedRank=null;
+  }else{
+    if(selected.length<3){
+      selected.push(card);
+      el.classList.add("selected");
+    }
+  }
+  updateControls();
+}
+function allSameRank(arr){ return arr.length>0 && arr.every(x=>x.rank===arr[0].rank); }
+function updateControls(){
+  const myId = me?.id;
+  const myHand = room.hands?.[myId] || [];
+  // infer hasDiscarded from hand size (2 after discard, 3 after draw)
+  hasDiscarded = (myHand.length === 2);
+
+  const isMyTurn = room.currentTurn===myId && room.gamePhase==="playing";
+  const canDiscard = isMyTurn && myHand.length===3 && selected.length>=1 && selected.length<=3 && allSameRank(selected);
+  const canDraw = isMyTurn && hasDiscarded && myHand.length===2;
+  const canLakdi = isMyTurn && room.turnsElapsed>0 && !room.cutPhase;
+
+  $("discardBtn").disabled     = !canDiscard;
+  $("drawStockBtn").disabled   = !canDraw;
+  $("drawDiscardBtn").disabled = !(canDraw && (room.discard||[]).length>0);
+  $("lakdiBtn").disabled       = !canLakdi;
+  $("cutBtn").disabled         = !(room.cutPhase && myId!==room.lakdiCallerId);
+  $("passBtn").disabled        = !(room.cutPhase && myId!==room.lakdiCallerId);
+  const amHost = !!(room.players||[]).find(p=>p.id===myId && p.isHost);
+  $("nextRoundBtn").disabled   = !(room.gamePhase==="showdown" && amHost);
+}
+
+/* ===== Buttons ===== */
+$("startBtn").onclick = () => socket.emit("start_game",{code:room?.code,endThreshold:200});
+
+$("discardBtn").onclick = () => {
+  if (!room) return;
+  if (!(selected.length>=1 && selected.length<=3 && allSameRank(selected))) return;
+  socket.emit("discard",{code:room.code,cards:selected}, (res)=>{
+    if(res?.error){ alert(res.error); return; }
+    // optimistic UI: clear selection and enable draw
+    selected = [];
+    selectedRank = null;
+    [...$("hand").children].forEach(c=>c.classList.remove("selected"));
+    hasDiscarded = true;
+    updateControls();
+  });
+};
+$("drawStockBtn").onclick = () => {
+  if (!room) return;
+  socket.emit("draw",{code:room.code,source:"stock"}, (res)=>{
+    if(res?.error) alert(res.error);
+  });
+};
+$("drawDiscardBtn").onclick = () => {
+  if (!room) return;
+  socket.emit("draw",{code:room.code,source:"discard"}, (res)=>{
+    if(res?.error) alert(res.error);
+  });
+};
+$("lakdiBtn").onclick = () => socket.emit("call_lakdi",{code:room.code});
+$("cutBtn").onclick   = () => socket.emit("cut",{code:room.code});
+$("passBtn").onclick  = () => socket.emit("pass_cut",{code:room.code});
+$("nextRoundBtn").onclick = () => socket.emit("next_round",{code:room.code});
+
+/* ===== Showdown ===== */
+$("closeShowdown").onclick=()=>{ $("showdownModal").classList.add("hidden"); };
+function showShowdown(summary){
+  $("showdownModal").classList.remove("hidden");
+  const grid=$("handsGrid"); grid.innerHTML="";
+  const winnerName = (room.players||[]).find(p=>p.id===summary.winnerId)?.name || "";
+  $("showdownInfo").textContent = `Winner: ${winnerName}`;
+
+  (room.players||[]).forEach(p=>{
+    const box=document.createElement("div"); box.className="handBox";
+    if(summary.winnerId===p.id) box.classList.add("winner");
+    if(summary.penalties[p.id]===50) box.classList.add("penalty");
+    const title=document.createElement("div");
+    title.innerHTML=`<strong>${p.name}</strong> — round score: ${summary.penalties[p.id]}`;
+    const minis=document.createElement("div"); minis.style.display="flex"; minis.style.flexWrap="wrap";
+    (room.hands[p.id]||[]).forEach(c=>{
+      const m=document.createElement("div"); m.className=`mini ${suitClass(c.suit)}`;
+      m.innerHTML = `<span class="cnr tl">${c.rank} ${sym[c.suit]}</span>${sym[c.suit]}<span class="cnr br">${c.rank} ${sym[c.suit]}</span>`;
+      minis.appendChild(m);
+    });
+    box.appendChild(title); box.appendChild(minis);
+    grid.appendChild(box);
+  });
+}
+
+/* ===== Socket ===== */
 socket.on("connect",()=> log("Connected:",socket.id));
 socket.on("connect_error",err=> log("connect_error",err.message||err));
+
+socket.on("room_state", st=>{
+  // identify me by id once
+  if(!me && st?.players){ const mine=st.players.find(p=>p.id===socket.id); if(mine) me={id:mine.id,name:mine.name}; }
+  room = st;
+  // when turn moves away, clear selection
+  if(room.currentTurn !== me?.id){
+    selected = []; selectedRank = null;
+  }
+  render();
+});
+
+socket.on("showdown_summary", s => showShowdown(s));
 </script>
 </body>
 </html>
