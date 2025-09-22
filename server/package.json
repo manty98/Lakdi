@@ -1,10 +1,21 @@
 {
   "name": "lakdi-server",
-  "type": "module",
-  "scripts": { "start": "node index.js" },
+  "version": "1.1.0",
+  "description": "Lakdi realtime game server",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
   "dependencies": {
-    "cors": "^2.8.5",
     "express": "^4.19.2",
     "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
