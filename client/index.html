@@ -1,71 +1,113 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Lakdi</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8" />
+  <title>Lakdi - Multiplayer Card Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <h1>Lakdi</h1>
+  <!-- Connection indicator -->
+  <div id="status" class="connection-status">🟢 Ready</div>
 
-  <section class="card">
-    <div class="row">
-      <label>Room</label>
-      <input id="room" value="demo" />
-      <label>Name</label>
-      <input id="name" value="Player" />
-      <button id="joinBtn" class="primary">Join</button>
-      <button id="addEasy" title="Host only">+ Easy Bot</button>
-      <button id="addMed" title="Host only">+ Medium Bot</button>
-      <button id="addHard" title="Host only">+ Hard Bot</button>
+  <!-- LOBBY -->
+  <section id="lobby" class="login-wrap">
+    <div class="login-card">
+      <div class="brand">
+        <div class="logo"></div>
+        <div class="title">Lakdi</div>
+      </div>
+      <div class="field">
+        <input id="nameInput" class="input" placeholder="Enter your name" maxlength="20"/>
+      </div>
+      <div class="field">
+        <input id="codeInput" class="input" placeholder="Room code (leave empty to create)" maxlength="6"/>
+      </div>
+      <div class="stack">
+        <button id="joinBtn" class="button btn-join">Join Multiplayer</button>
+        <button id="createBtn" class="button btn-create">Create New Room</button>
+        <button id="cpuBtn" class="button btn-cpu">🤖 Play vs Computer</button>
+      </div>
+      <div id="lobbyMsg" class="lobby-msg"></div>
     </div>
-    <div class="row">
-      <button id="startBtn">Start (host)</button>
-      <label>Hand</label><input id="handSize" type="number" value="5" min="1" max="7" />
-      <label>Turn(s)</label><input id="turnSec" type="number" value="25" min="5" max="90" />
-    </div>
-    <div id="msg" class="muted"></div>
-    <div id="err" class="error"></div>
   </section>
 
-  <div class="grid">
-    <section class="card">
-      <h3>Your Hand</h3>
-      <div id="hand" class="hand"></div>
-      <div class="row">
-        <button id="discardBtn">Discard (1–3 same rank)</button>
-        <button id="drawStockBtn">Draw: Stock</button>
-        <button id="drawPastBtn">Draw: Past</button>
-        <button id="lakdiBtn" class="primary">Call Lakdi</button>
-      </div>
-      <div class="muted" id="turn"></div>
-      <div class="muted" id="deadline"></div>
-    </section>
+  <!-- GAME TABLE -->
+  <section id="game" class="game-container hidden">
+    <!-- Floating scoreboard -->
+    <div class="scoreboard">
+      <h3>Scores</h3>
+      <div id="roomInfo" class="room-info"></div>
+      <div id="scores"></div>
+    </div>
 
-    <section class="card">
-      <h3>Table</h3>
-      <div class="row">
-        <div>Stock: <span id="stockCount">0</span></div>
+    <!-- Host start panel -->
+    <div id="hostStart" class="host-start hidden">
+      <button id="btnStart" class="button host-start-btn">Start Game</button>
+      <div id="startHint" class="host-start-hint">Need at least 2 players</div>
+    </div>
+
+    <div class="game-table">
+      <!-- Opponent seats -->
+      <div id="seats" class="players-container"></div>
+
+      <!-- Center piles -->
+      <div class="table-center">
+        <div id="stockPile" class="pile stock">
+          <div>Stock</div>
+          <div id="stockCount">0</div>
+          <small>Always draw</small>
+        </div>
+
+        <div id="immediatePile" class="pile discard" style="pointer-events:none">
+          <div id="immediateTop">—</div>
+          <small>Immediate</small>
+        </div>
+
+        <div id="pastPile" class="pile discard">
+          <div id="pastTop">Empty</div>
+          <small>Past (drawable)</small>
+        </div>
       </div>
-      <div>
-        <strong>Immediate Discard (current player)</strong>
-        <div id="immediate" class="pile"></div>
+
+      <!-- Action buttons -->
+      <div class="action-bar">
+        <button id="btnDiscard" class="action-btn btn-discard" disabled>Discard</button>
+        <button id="btnDrawS" class="action-btn btn-draw-s" disabled>Draw Stock</button>
+        <button id="btnDrawD" class="action-btn btn-draw-d" disabled>Draw Past</button>
+        <button id="btnLakdi" class="action-btn btn-lakdi" disabled>Call Lakdi</button>
       </div>
-      <div>
-        <strong>Past Discard (available to next player)</strong>
-        <div id="past" class="pile"></div>
-      </div>
-      <div>
-        <strong>Players</strong>
-        <ul id="players"></ul>
-      </div>
-      <div id="cut"></div>
-    </section>
+
+      <!-- My hand -->
+      <div id="hand" class="player-hand"></div>
+    </div>
+  </section>
+
+  <!-- Turn Timer -->
+  <div id="turnTimer" class="turn-timer hidden">
+    <div class="timer-circle"></div>
+    <span id="tleft">30</span>
   </div>
 
-  <!-- Socket.IO client served by our server -->
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="./script.js"></script>
+  <!-- Showdown Modal -->
+  <div id="showdown" class="modal hidden">
+    <div class="modal-content">
+      <h2>Round Results</h2>
+      <div id="handsGrid" class="hands-grid"></div>
+      <div class="modal-actions">
+        <button id="closeShowdown" class="button modal-close">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Placeholder script: no logic, just to avoid console errors on clicks -->
+  <script>
+    // Pure-UI stub: safely no-op the main buttons
+    ["joinBtn","createBtn","cpuBtn","btnStart","btnDiscard","btnDrawS","btnDrawD","btnLakdi","closeShowdown"]
+      .forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener("click", (e)=> e.preventDefault());
+      });
+  </script>
 </body>
 </html>
