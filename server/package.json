@@ -1,0 +1,6 @@
+{
+  "name": "lakdi-server",
+  "type": "module",
+  "scripts": { "start": "node index.js" },
+  "dependencies": { "express":"^4", "socket.io":"^4", "cors":"^2" }
+}
