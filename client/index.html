@@ -1,113 +1,160 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Lakdi - Multiplayer Card Game</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <link rel="stylesheet" href="./style.css" />
+  <meta charset="utf-8" />
+  <title>Lakdi – Multiplayer Card Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 20px; }
+    fieldset { margin-bottom: 16px; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    button { padding: 8px 12px; cursor: pointer; }
+    .card { border:1px solid #ccc; border-radius:6px; padding:6px 10px; margin:2px;
+            display:inline-block; cursor:pointer; }
+    .card.selected { border-color:#007aff; box-shadow:0 0 0 2px #007aff44; }
+    .hand, .pile { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+    #log { white-space: pre-wrap; border:1px solid #ddd; padding:8px; margin-top:10px; height:120px; overflow:auto; }
+    #err { color:#b00020; }
+  </style>
 </head>
 <body>
-  <!-- Connection indicator -->
-  <div id="status" class="connection-status">🟢 Ready</div>
+  <h1>🎴 Lakdi – Multiplayer Card Game</h1>
 
-  <!-- LOBBY -->
-  <section id="lobby" class="login-wrap">
-    <div class="login-card">
-      <div class="brand">
-        <div class="logo"></div>
-        <div class="title">Lakdi</div>
-      </div>
-      <div class="field">
-        <input id="nameInput" class="input" placeholder="Enter your name" maxlength="20"/>
-      </div>
-      <div class="field">
-        <input id="codeInput" class="input" placeholder="Room code (leave empty to create)" maxlength="6"/>
-      </div>
-      <div class="stack">
-        <button id="joinBtn" class="button btn-join">Join Multiplayer</button>
-        <button id="createBtn" class="button btn-create">Create New Room</button>
-        <button id="cpuBtn" class="button btn-cpu">🤖 Play vs Computer</button>
-      </div>
-      <div id="lobbyMsg" class="lobby-msg"></div>
+  <fieldset>
+    <legend>Lobby</legend>
+    <div class="row">
+      <label>Room</label><input id="room" value="demo" />
+      <label>Name</label><input id="name" value="Player" />
+      <button id="joinBtn">Join</button>
+      <button id="addBotBtn">+Bot</button>
+      <button id="startBtn">Start (host)</button>
     </div>
-  </section>
+    <div id="err"></div>
+  </fieldset>
 
-  <!-- GAME TABLE -->
-  <section id="game" class="game-container hidden">
-    <!-- Floating scoreboard -->
-    <div class="scoreboard">
-      <h3>Scores</h3>
-      <div id="roomInfo" class="room-info"></div>
-      <div id="scores"></div>
+  <fieldset>
+    <legend>Game</legend>
+    <div>Active turn: <span id="turnName">—</span></div>
+    <div>Stock count: <span id="stockCount">0</span></div>
+    <div>Declared: <span id="declared">false</span></div>
+
+    <h4>Past Discard</h4>
+    <div id="past" class="pile"></div>
+
+    <h4>Immediate Discard</h4>
+    <div id="immediate" class="pile"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Your Hand</legend>
+    <div id="hand" class="hand"></div>
+    <div class="row" style="margin-top:8px;">
+      <button id="discardBtn">Discard (1–3 same rank)</button>
+      <button id="drawStockBtn">Draw Stock</button>
+      <button id="drawPastBtn">Draw Past</button>
+      <button id="lakdiBtn">Call Lakdi</button>
     </div>
+  </fieldset>
 
-    <!-- Host start panel -->
-    <div id="hostStart" class="host-start hidden">
-      <button id="btnStart" class="button host-start-btn">Start Game</button>
-      <div id="startHint" class="host-start-hint">Need at least 2 players</div>
-    </div>
+  <fieldset>
+    <legend>Players</legend>
+    <ul id="players"></ul>
+  </fieldset>
 
-    <div class="game-table">
-      <!-- Opponent seats -->
-      <div id="seats" class="players-container"></div>
+  <h3>Log</h3>
+  <div id="log"></div>
 
-      <!-- Center piles -->
-      <div class="table-center">
-        <div id="stockPile" class="pile stock">
-          <div>Stock</div>
-          <div id="stockCount">0</div>
-          <small>Always draw</small>
-        </div>
-
-        <div id="immediatePile" class="pile discard" style="pointer-events:none">
-          <div id="immediateTop">—</div>
-          <small>Immediate</small>
-        </div>
-
-        <div id="pastPile" class="pile discard">
-          <div id="pastTop">Empty</div>
-          <small>Past (drawable)</small>
-        </div>
-      </div>
-
-      <!-- Action buttons -->
-      <div class="action-bar">
-        <button id="btnDiscard" class="action-btn btn-discard" disabled>Discard</button>
-        <button id="btnDrawS" class="action-btn btn-draw-s" disabled>Draw Stock</button>
-        <button id="btnDrawD" class="action-btn btn-draw-d" disabled>Draw Past</button>
-        <button id="btnLakdi" class="action-btn btn-lakdi" disabled>Call Lakdi</button>
-      </div>
-
-      <!-- My hand -->
-      <div id="hand" class="player-hand"></div>
-    </div>
-  </section>
-
-  <!-- Turn Timer -->
-  <div id="turnTimer" class="turn-timer hidden">
-    <div class="timer-circle"></div>
-    <span id="tleft">30</span>
-  </div>
-
-  <!-- Showdown Modal -->
-  <div id="showdown" class="modal hidden">
-    <div class="modal-content">
-      <h2>Round Results</h2>
-      <div id="handsGrid" class="hands-grid"></div>
-      <div class="modal-actions">
-        <button id="closeShowdown" class="button modal-close">Continue</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Placeholder script: no logic, just to avoid console errors on clicks -->
+  <!-- Socket.IO client served by server.js -->
+  <script src="/socket.io/socket.io.js"></script>
   <script>
-    // Pure-UI stub: safely no-op the main buttons
-    ["joinBtn","createBtn","cpuBtn","btnStart","btnDiscard","btnDrawS","btnDrawD","btnLakdi","closeShowdown"]
-      .forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener("click", (e)=> e.preventDefault());
+    const $ = (id) => document.getElementById(id);
+    const log = (...a) => { $("log").textContent += a.join(" ") + "\\n"; $("log").scrollTop = $("log").scrollHeight; };
+    const isRed = (s) => s==="♥"||s==="♦";
+
+    let socket, ROOM, STATE, SELECTED = new Set();
+
+    function connect() {
+      if (socket) return;
+      socket = io();
+
+      socket.on("connect", ()=>log("connected", socket.id));
+      socket.on("joined", (info)=>log("joined room", info.roomId, info.host?"(host)":""));
+      socket.on("error", (e)=>{ $("err").textContent = String(e); });
+      socket.on("state", ({state})=>{
+        STATE=state;
+        renderAll();
       });
+    }
+
+    $("joinBtn").onclick = () => {
+      connect();
+      ROOM = ($("room").value||"demo").trim();
+      const name = ($("name").value||"Player").trim();
+      socket.emit("join", { roomId: ROOM, name });
+    };
+    $("addBotBtn").onclick = () => {
+      if (!ROOM) return;
+      socket.emit("addBot", { roomId: ROOM, difficulty:"easy" });
+    };
+    $("startBtn").onclick = () => {
+      if (!ROOM) return;
+      socket.emit("start", { roomId: ROOM, handSize:5 });
+    };
+
+    $("discardBtn").onclick = () => {
+      if (!STATE?.you?.hand) return;
+      const arr = Array.from(SELECTED).sort((a,b)=>a-b);
+      if (!arr.length) return;
+      socket.emit("discard",{ roomId:ROOM, handIndices:arr });
+      SELECTED.clear();
+    };
+    $("drawStockBtn").onclick = ()=>socket.emit("draw",{ roomId:ROOM, source:"stock" });
+    $("drawPastBtn").onclick = ()=>socket.emit("draw",{ roomId:ROOM, source:"past" });
+    $("lakdiBtn").onclick = ()=>socket.emit("lakdi",{ roomId:ROOM });
+
+    function renderAll(){
+      $("err").textContent="";
+      $("stockCount").textContent = STATE.stockCount;
+      $("declared").textContent = STATE.declared;
+      $("turnName").textContent = nameOf(STATE.activePlayerId);
+      renderPlayers();
+      renderHand();
+      renderPile("past", STATE.pastDiscard||[]);
+      renderPile("immediate", STATE.immediateDiscard||[]);
+    }
+    function renderPlayers(){
+      $("players").innerHTML="";
+      (STATE.players||[]).forEach(p=>{
+        const li=document.createElement("li");
+        li.textContent=`${p.name} (${p.handCount})${p.id===STATE.activePlayerId?" ← turn":""}`;
+        $("players").appendChild(li);
+      });
+    }
+    function renderHand(){
+      const wrap=$("hand"); wrap.innerHTML="";
+      (STATE.you?.hand||[]).forEach((c,i)=>{
+        const d=document.createElement("div");
+        d.className="card"+(SELECTED.has(i)?" selected":"");
+        d.textContent=`${c.r}${c.s}`;
+        if (isRed(c.s)) d.style.color="#e74c3c";
+        d.onclick=()=>{ if(SELECTED.has(i))SELECTED.delete(i); else SELECTED.add(i); renderHand(); };
+        wrap.appendChild(d);
+      });
+    }
+    function renderPile(id,cards){
+      const el=$(id); el.innerHTML="";
+      cards.forEach(c=>{
+        const d=document.createElement("div");
+        d.className="card";
+        d.textContent=`${c.r}${c.s}`;
+        if (isRed(c.s)) d.style.color="#e74c3c";
+        el.appendChild(d);
+      });
+    }
+    function nameOf(id){
+      const p=(STATE.players||[]).find(x=>x.id===id);
+      return p?p.name:"—";
+    }
   </script>
 </body>
 </html>
