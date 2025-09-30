@@ -1,36 +1,507 @@
-// server.js — single-file static server for your all-in-one index.html
-const path = require("path");
-const express = require("express");
-const compression = require("compression");
-const helmet = require("helmet");
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Lakdi – Multiplayer Card Game</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:16px}
+  button,input{font:inherit}
+  :root{
+    --bg1:#0f3a2a; --bg2:#0b2417;
+    --gold:#ffd700; --muted:#bcd1ff;
+    --panel:rgba(255,255,255,.10); --panel-b:rgba(255,255,255,.18);
+    --ok:#23b26d; --warn:#b58900; --err:#e74c3c; --blue:#2d7fe3; --link:#8ab4ff;
+  }
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#fff;height:100vh;background:linear-gradient(135deg,var(--bg1),var(--bg2));overflow:hidden}
+  .hidden{display:none!important}
 
-const app = express();
+  /* Login */
+  .login{display:flex;align-items:center;justify-content:center;height:100%}
+  .card{background:var(--panel);border:1px solid var(--panel-b);backdrop-filter:blur(8px);border-radius:20px;padding:28px;width:min(420px,92vw);box-shadow:0 18px 36px rgba(0,0,0,.28)}
+  .card h1{font-size:42px;margin-bottom:16px;line-height:1;background:linear-gradient(45deg,var(--gold),#fffbe6);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+  .row{display:flex;gap:10px;margin:8px 0}
+  .input{flex:1;padding:14px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.07);color:#fff}
+  .btn{padding:14px 16px;border:none;border-radius:12px;font-weight:900;cursor:pointer;transition:.12s;box-shadow:0 8px 18px rgba(0,0,0,.2)}
+  .btn:active{transform:translateY(1px)}
+  .btn-ai{background:linear-gradient(45deg,#27ae60,var(--ok))}
+  .btn-go{background:linear-gradient(45deg,#ff6b6b,#ee5a24)}
+  .msg{font-size:14px;margin-top:8px}
+  .msg.status{color:var(--link)} .msg.error{color:#ffb4b4}
 
-// Basic hardening + gzip
-app.use(helmet({
-  contentSecurityPolicy: false, // your inline <script> needs this off
-}));
-app.use(compression());
+  /* Game shell */
+  .wrap{height:100vh;display:flex;flex-direction:column;position:relative}
+  .table{flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:22px}
 
-// Serve the folder this file is in (index.html + assets if any)
-app.use(express.static(__dirname, {
-  extensions: ["html"], // so "/" loads index.html
-  maxAge: "1h",
-  setHeaders(res, filePath) {
-    if (filePath.endsWith("index.html")) {
-      // don’t cache the HTML shell
-      res.setHeader("Cache-Control", "no-store");
+  /* Piles - responsive and proportional */
+  .center{display:flex;align-items:center;justify-content:center;gap:clamp(12px,2.2vw,24px)}
+  .pile{aspect-ratio:3/4;width:clamp(96px,12vw,136px);height:auto;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 8px;user-select:none}
+  .pile .title{font-size:clamp(10px,1.2vw,12px);line-height:1.1;margin-top:6px;opacity:.9;text-align:center}
+  .pile.stock{background:linear-gradient(135deg,#2c3e50,#34495e);border:2px solid #3498db}
+  .pile.discard{background:#fff;color:#111;border:2px solid var(--err);font-weight:900}
+  .clickable{cursor:pointer;transition:transform .12s}.clickable:hover{transform:scale(1.05)}
+  .disabled{opacity:.55;filter:grayscale(.5);pointer-events:none}
+
+  /* Players on a semicircle */
+  .players{position:absolute;inset:0;pointer-events:none}
+  .seat{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:8px;min-width:120px}
+  .seat.active{animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.76}}
+  .pinfo{background:var(--panel);border:1px solid var(--panel-b);padding:10px 12px;border-radius:14px;text-align:center}
+  .pname{font-weight:900}.pscore{font-size:13px;color:var(--gold);margin-top:2px}
+  .backs{display:flex;gap:0;margin-left:-12px}
+  .back{width:28px;height:40px;border-radius:6px;background:linear-gradient(135deg,#2c3e50,#34495e);border:1px solid #3498db;margin-left:-12px}
+
+  /* Hand */
+  .hand{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:12px;z-index:5}
+  .cardv{width:clamp(72px,9vw,96px);aspect-ratio:3/4;background:#fff;border-radius:12px;border:2px solid #cbd5e1;color:#111;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:clamp(20px,2.4vw,28px);cursor:pointer;transition:.16s}
+  .cardv.red{color:#e74c3c}.cardv.selected{transform:translateY(-14px);border-color:var(--gold);box-shadow:0 12px 20px rgba(0,0,0,.25)}
+  .cardv:active{transform:translateY(-6px)}
+
+  /* Actions */
+  .actions{position:absolute;bottom:clamp(110px,16vh,160px);left:50%;transform:translateX(-50%);display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+  .act{padding:13px 18px;border:none;border-radius:10px;font-weight:900;cursor:pointer;transition:opacity .1s}
+  .act.dis{background:var(--err);color:#fff}
+  .act.ds{background:var(--blue);color:#fff}
+  .act.dp{background:var(--warn);color:#fff}
+  .act.lk{background:var(--ok);color:#fff}
+  .act[disabled]{opacity:.4;filter:grayscale(.5);cursor:not-allowed;pointer-events:none}
+  .hint{width:100%;text-align:center;font-size:13px;color:var(--muted);margin-top:6px}
+
+  /* Scoreboard bottom-left & info top-right */
+  .score{position:absolute;bottom:20px;left:20px;background:rgba(0,0,0,.85);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:14px 12px;min-width:260px;z-index:6}
+  .score h3{margin-bottom:8px;color:var(--gold);text-align:center}
+  .srow{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-radius:8px;margin:4px 0;background:rgba(255,255,255,.06)}
+  .srow.lead{background:rgba(46,204,113,.28)}
+  .info{position:absolute;top:20px;right:20px;background:rgba(0,0,0,.8);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:12px;z-index:6}
+  .info .turn{color:var(--gold);font-weight:900}.info .round{color:#8ab4ff;font-size:13px}
+
+  /* Timer top-left */
+  .timer{position:fixed;left:20px;top:20px;width:52px;height:52px;border-radius:50%;border:4px solid rgba(255,215,0,.28);display:flex;align-items:center;justify-content:center;color:var(--gold);font-weight:900;z-index:8;background:rgba(0,0,0,.35)}
+  .timer .ring{position:absolute;inset:-4px;border-radius:50%;border:4px solid transparent;border-top-color:var(--gold);animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* Modal */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;z-index:40}
+  .mc{background:linear-gradient(135deg,var(--bg1),var(--bg2));border:1px solid rgba(255,255,255,.28);border-radius:16px;padding:18px 16px;width:min(920px,92vw);max-height:82vh;overflow:auto}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:14px}
+  .hbox{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px}
+  .hbox.win{border-color:#2ecc71;background:rgba(46,204,113,.22)}
+  .hbox.pen{border-color:#e74c3c;background:rgba(231,76,60,.22)}
+  .mini{width:46px;height:60px;background:#fff;border:2px solid #cbd5e1;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;margin:2px;color:#111}
+  .mini.red{color:#e74c3c}
+
+  /* Keyboard help */
+  .help{position:fixed;right:22px;bottom:18px;background:rgba(0,0,0,.7);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:8px 10px;font-size:13px;z-index:7}
+  .kbd{display:inline-block;padding:2px 6px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#111;font-weight:800;font-size:12px}
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<section id="login" class="login">
+  <div class="card">
+    <h1>🃏 Lakdi</h1>
+    <div class="row"><input id="name" class="input" placeholder="Enter your name" maxlength="20"/></div>
+    <div class="row"><button id="btnCPU" class="btn btn-ai" style="flex:1">🤖 Play vs Computer</button></div>
+    <div class="row" style="justify-content:center;color:rgba(255,255,255,.6)">— OR —</div>
+    <div class="row"><input id="room" class="input" placeholder="Room code (demo only)" maxlength="6"/></div>
+    <div class="row"><button id="btnDemo" class="btn btn-go" style="flex:1">🌐 Local Demo (no network)</button></div>
+    <div id="lmsg" class="msg status"></div>
+  </div>
+</section>
+
+<!-- Game -->
+<section id="game" class="wrap hidden">
+  <div class="info"><div id="infTurn" class="turn">Your Turn</div><div id="infRound" class="round">Round 1</div></div>
+  <div class="score"><h3>Scores</h3><div id="scoreList"></div></div>
+
+  <div class="table">
+    <div id="seats" class="players"></div>
+
+    <div class="center">
+      <div id="pastPile" class="pile discard disabled">
+        <div id="pastTop">Empty</div>
+        <div class="title">Past (drawable)</div>
+      </div>
+      <div id="stockPile" class="pile stock clickable">
+        <div>Stock</div><div id="stockCount">0</div>
+        <div class="title">Always draw</div>
+      </div>
+      <div id="immPile" class="pile discard disabled">
+        <div id="immTop">—</div>
+        <div class="title">Immediate (yours)</div>
+      </div>
+    </div>
+
+    <div id="timer" class="timer hidden"><div class="ring"></div><span id="tleft">30</span></div>
+
+    <div class="actions">
+      <button id="btnDiscard" class="act dis" disabled>Discard</button>
+      <button id="btnDrawS" class="act ds" disabled>Draw Stock</button>
+      <button id="btnDrawP" class="act dp" disabled>Draw Past</button>
+      <button id="btnLakdi" class="act lk" disabled>Call Lakdi</button>
+      <div id="hint" class="hint"></div>
+    </div>
+
+    <div id="hand" class="hand"></div>
+  </div>
+
+  <div class="help">
+    <span class="kbd">1</span>/<span class="kbd">2</span>/<span class="kbd">3</span> select ·
+    <span class="kbd">D</span> discard · <span class="kbd">S</span> stock · <span class="kbd">F</span> past ·
+    <span class="kbd">L</span> Lakdi
+  </div>
+</section>
+
+<!-- Cut Challenge (when someone else declares Lakdi) -->
+<div id="challenge" class="modal hidden">
+  <div class="mc">
+    <h2> Lakdi declared by <span id="declName"></span> </h2>
+    <div id="declCards" style="display:flex;flex-wrap:wrap;margin:12px 0;"></div>
+    <div style="text-align:center">
+      <button id="btnCut" class="btn btn-go" style="padding:10px 14px;border-radius:10px;margin-right:10px">Call Cut</button>
+      <button id="btnLet" class="btn btn-ai" style="padding:10px 14px;border-radius:10px">Let it stand</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cut Results -->
+<div id="cut" class="modal hidden">
+  <div class="mc">
+    <h2>Round Results</h2>
+    <div id="handsGrid" class="grid"></div>
+    <div style="text-align:center;margin-top:8px">
+      <button id="btnNext" class="btn btn-go" style="padding:10px 14px;border-radius:10px">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- Game Over -->
+<div id="over" class="modal hidden">
+  <div class="mc">
+    <h2>Game Over</h2>
+    <div id="finalRes" style="margin:10px 0 14px"></div>
+    <div style="text-align:center">
+      <button id="btnNew" class="btn btn-go" style="padding:10px 14px;border-radius:10px">New Game</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- Helpers ---------- */
+const $=id=>document.getElementById(id);
+const sym={hearts:"♥",diamonds:"♦",clubs:"♣",spades:"♠"};
+const isRed=s=>s==="hearts"||s==="diamonds";
+const v=r=>r==="A"?1:r==="J"?11:r==="Q"?12:r==="K"?13:parseInt(r,10);
+const sum=hand=>hand.reduce((a,c)=>a+v(c.rank),0);
+const label=c=>c?`${c.rank}${sym[c.suit]}`:"";
+
+/* ---------- State ---------- */
+const S={
+  players:[], myId:"me", turn:null, round:1,
+  deck:[], stockCount:0,
+  myHand:[], selected:[],
+  pastTop:null, immCards:[],
+  firstTurn:true, hasDiscarded:false, hasDrawn:false,
+  timer:null, endThreshold:200,
+  isSingle:false, ais:[]
+};
+// pending challenge context
+let PENDING=null;
+
+class AI{
+  constructor(id,name,level="medium"){this.id=id;this.name=name;this.level=level;this.hand=[];this.score=0;}
+  val(r){return v(r)} total(){return this.hand.reduce((a,c)=>a+this.val(c.rank),0)}
+  chooseDiscard(){const h=this.hand;if(!h.length)return[0];if(this.level==="easy")return[Math.floor(Math.random()*h.length)];
+    const map={};h.forEach((c,i)=>{(map[c.rank]??=[]).push(i)});let best=[0],bestLen=1,bestRank="A";
+    for(const [r,ix] of Object.entries(map)){if(ix.length>bestLen||(ix.length===bestLen&&this.val(r)>this.val(bestRank))){best=ix.slice(0,Math.min(3,ix.length));bestLen=best.length;bestRank=r;}}
+    if(this.level==="hard"){let bestChoice=best,bestRemain=1e9;
+      for(let i=0;i<h.length;i++){const rem=h.filter((_,j)=>j!==i).reduce((a,c)=>a+this.val(c.rank),0);if(rem<bestRemain){bestRemain=rem;bestChoice=[i];}}
+      for(const [r,ix] of Object.entries(map)){const use=ix.slice(0,Math.min(3,ix.length));
+        const rem=h.filter((_,j)=>!use.includes(j)).reduce((a,c)=>a+this.val(c.rank),0);if(rem<bestRemain){bestRemain=rem;bestChoice=use;}}
+      return bestChoice;}
+    return best;}
+  chooseDraw(past){if(!past)return"stock";const dv=this.val(past.rank),t=this.total();if(this.level==="easy")return Math.random()<.5?"stock":"past";if(this.level==="medium")return dv<=4?"past":"stock";return(dv<6&&t>10)?"past":"stock";}
+  wantLakdi(){const t=this.total();if(this.level==="easy")return t<=8;if(this.level==="medium")return t<=6;return t<=5;}
+}
+
+/* ---------- Setup ---------- */
+function deck(n=1){const suits=["hearts","diamonds","clubs","spades"],ranks=["A","2","3","4","5","6","7","8","9","10","J","Q","K"];const d=[];for(let k=0;k<n;k++)for(const s of suits)for(const r of ranks)d.push({suit:s,rank:r});for(let i=d.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[d[i],d[j]]=[d[j],d[i]];}return d;}
+function deal3(){const h=[];for(let i=0;i<3&&S.deck.length;i++)h.push(S.deck.pop());S.stockCount=S.deck.length;return h;}
+
+/* ---------- Seats on a semicircle (responsive) ---------- */
+function calcAngles(n){ if(n<=1)return[0]; if(n===2)return[-45,45]; if(n===3)return[-70,0,70];
+  const start=-75,end=75,step=(end-start)/(n-1),arr=[];for(let i=0;i<n;i++)arr.push(start+i*step);return arr; }
+function placeSeat(div,deg){ const cx=50, cy=36, r=24; const rad=deg*Math.PI/180, x=cx + r*Math.sin(rad), y=cy - r*Math.cos(rad);
+  const clamp=(val,min,max)=>Math.max(min,Math.min(max,val)); div.style.left = clamp(x,8,92)+"%"; div.style.top = clamp(y,10,46)+"%"; }
+function renderSeats(){
+  const wrap=$("seats"); wrap.innerHTML="";
+  const others=S.players.filter(p=>p.id!==S.myId);
+  const ang=calcAngles(others.length);
+  others.forEach((p,i)=>{
+    const s=document.createElement("div");
+    s.className=`seat ${S.turn===p.id?'active':''}`;
+    s.innerHTML=`<div class="pinfo"><div class="pname">${p.name}</div><div class="pscore">${p.score} pts</div></div>
+                 <div class="backs"><div class="back"></div><div class="back"></div><div class="back"></div></div>`;
+    placeSeat(s, ang[i]); $("seats").appendChild(s);
+  });
+}
+window.addEventListener('resize', renderSeats);
+
+/* ---------- Rendering ---------- */
+function renderHand(){ const wrap=$("hand"); wrap.innerHTML=""; S.myHand.forEach((c,i)=>{const d=document.createElement("div"); d.className=`cardv ${isRed(c.suit)?'red':''} ${S.selected.includes(i)?'selected':''}`; d.textContent=label(c); d.onclick=()=>select(i); wrap.appendChild(d); }); }
+function renderScores(){ const list=$("scoreList"); list.innerHTML=""; const min=Math.min(...S.players.map(p=>p.score)); [...S.players].sort((a,b)=>a.score-b.score).forEach(p=>{const row=document.createElement("div"); row.className=`srow ${p.score===min?'lead':''}`; row.innerHTML=`<span>${p.name}</span><span>${p.score}</span>`; list.appendChild(row);});}
+function renderPiles(){ $("stockCount").textContent=S.stockCount; $("immTop").textContent=S.immCards.length?S.immCards.map(label).join(" "):"—"; $("pastTop").textContent=S.pastTop?label(S.pastTop):"Empty"; const pastOK=S.turn===S.myId&&S.hasDiscarded&&!S.hasDrawn&&!!S.pastTop; $("pastPile").classList.toggle("clickable",pastOK); $("pastPile").classList.toggle("disabled",!pastOK); $("immPile").classList.toggle("disabled",true);}
+function renderInfo(){ $("infTurn").textContent=S.turn===S.myId?"Your Turn":`${(S.players.find(p=>p.id===S.turn)||{name:'—'}).name}'s Turn`; $("infRound").textContent=`Round ${S.round}`; }
+
+/* ---------- Selection & Buttons ---------- */
+function select(i){ if(S.turn!==S.myId||S.hasDiscarded) return; const k=S.selected.indexOf(i); if(k>-1) S.selected.splice(k,1); else{ if(S.selected.length){const r0=S.myHand[S.selected[0]].rank; if(S.myHand[i].rank!==r0) S.selected=[];} if(S.selected.length<3) S.selected.push(i);} renderHand(); updateButtons();}
+function validDiscard(){ if(!S.selected.length||S.selected.length>3) return false; const r0=S.myHand[S.selected[0]].rank; return S.selected.every(ix=>S.myHand[ix].rank===r0); }
+function updateButtons(){
+  const myTurn=S.turn===S.myId;
+  $("btnDiscard").disabled = !(myTurn && !S.hasDiscarded && validDiscard());
+  const canDraw=myTurn && S.hasDiscarded && !S.hasDrawn;
+  $("btnDrawS").disabled=!canDraw; $("btnDrawP").disabled=!(canDraw && !!S.pastTop);
+  const canLakdi=myTurn && !S.hasDiscarded && S.myHand.length>=1 && !S.firstTurn; // block first turn
+  $("btnLakdi").disabled=!canLakdi;
+  const hint=$("hint");
+  if(!myTurn) hint.textContent="Waiting for other players…";
+  else if(!S.hasDiscarded) hint.textContent = S.firstTurn ? "Select 1–3 same-rank cards and Discard." : "Select 1–3 same-rank cards and Discard — or Call Lakdi.";
+  else if(!S.hasDrawn) hint.textContent = S.pastTop ? "Draw from Stock or Past." : "Draw from Stock.";
+  else hint.textContent="";
+  renderPiles();
+}
+
+/* ---------- Timer ---------- */
+function startTimer(){ stopTimer(); $("timer").classList.remove("hidden"); let t=30; $("tleft").textContent=t; S.timer=setInterval(()=>{t--; $("tleft").textContent=t; if(t<=0){stopTimer(); autoPlay();}},1000);}
+function stopTimer(){ if(S.timer){clearInterval(S.timer); S.timer=null; $("timer").classList.add("hidden");} }
+function autoPlay(){ if(!S.hasDiscarded && S.turn===S.myId){ if(S.myHand.length){ const hi=S.myHand.reduce((ix,c,i)=> v(c.rank)>v(S.myHand[ix].rank)?i:ix,0); S.selected=[hi]; doDiscard(); setTimeout(()=>{ if(!S.hasDrawn) drawStock(); }, 500);} } else if(!S.hasDrawn){ drawStock(); } }
+
+/* ---------- Actions ---------- */
+function doDiscard(){ if(!validDiscard()||S.hasDiscarded) return; const thrown=S.selected.map(ix=>S.myHand[ix]); S.selected.sort((a,b)=>b-a).forEach(ix=>S.myHand.splice(ix,1)); S.immCards=thrown.slice(); S.hasDiscarded=true; S.selected.length=0; renderHand(); updateButtons();}
+function drawStock(){ if(!(S.hasDiscarded && !S.hasDrawn)) return; if(S.deck.length){ S.myHand.push(S.deck.pop()); S.stockCount=S.deck.length; S.hasDrawn=true; renderHand(); updateButtons(); endTurn(); } }
+function drawPast(){ if(!(S.hasDiscarded && !S.hasDrawn && S.pastTop)) return; S.myHand.push(S.pastTop); S.pastTop=null; S.hasDrawn=true; renderHand(); updateButtons(); endTurn(); }
+function callLakdi(){ if(S.turn!==S.myId) return; if(S.hasDiscarded) return; if(S.firstTurn) return; if(S.myHand.length<1) return; doLakdi(S.myId); }
+
+/* ---------- Turn flow ---------- */
+function endTurn(){
+  const top=S.immCards.at(-1)||null; S.pastTop=top; S.immCards=[];
+  const ix=S.players.findIndex(p=>p.id===S.turn);
+  S.turn=S.players[(ix+1)%S.players.length].id;
+  S.firstTurn=false; S.hasDiscarded=false; S.hasDrawn=false;
+  stopTimer(); renderSeats(); renderInfo(); updateButtons();
+  if(S.turn===S.myId){ startTimer(); } else if(S.isSingle){ const ai=S.ais.find(a=>a.id===S.turn); if(ai) aiTurn(ai); }
+}
+
+/* ---------- AI turn with first-turn Lakdi block ---------- */
+function aiTurn(ai){
+  setTimeout(()=>{
+    if(!S.firstTurn && ai.wantLakdi()){ doLakdi(ai.id); return; }
+    const choice=ai.chooseDiscard(); const thrown=choice.map(i=>ai.hand[i]);
+    choice.sort((a,b)=>b-a).forEach(ix=>ai.hand.splice(ix,1)); let aiImm=thrown.slice();
+    setTimeout(()=>{
+      const src=ai.chooseDraw(S.pastTop);
+      if(src==="past" && S.pastTop){ ai.hand.push(S.pastTop); S.pastTop=null; }
+      else if(S.deck.length){ ai.hand.push(S.deck.pop()); S.stockCount=S.deck.length; }
+      if(!S.firstTurn && ai.wantLakdi()){ doLakdi(ai.id); return; }
+      const top=aiImm.at(-1)||null; S.pastTop=top; aiImm=[];
+      const ix=S.players.findIndex(p=>p.id===S.turn);
+      S.turn=S.players[(ix+1)%S.players.length].id;
+      S.firstTurn=false; renderSeats(); renderInfo(); updateButtons();
+      if(S.turn===S.myId){ startTimer(); } else { const nxt=S.ais.find(a=>a.id===S.turn); if(nxt) aiTurn(nxt); }
+    },800);
+  },600);
+}
+
+/* ---------- Lakdi / Cut logic (first cut priority) ---------- */
+function orderAfter(pid){ // returns player ids in order starting after pid
+  const idx=S.players.findIndex(p=>p.id===pid); const arr=[]; for(let i=1;i<S.players.length;i++){arr.push(S.players[(idx+i)%S.players.length].id);} return arr;
+}
+
+function doLakdi(callerId){
+  stopTimer();
+
+  // snapshot hands & totals
+  const hands={};
+  hands[S.myId]=[...S.myHand];
+  if(S.isSingle) S.ais.forEach(ai=>hands[ai.id]=[...ai.hand]);
+  else S.players.filter(p=>p.id!==S.myId).forEach(p=>{
+    // demo-only fallback hands
+    hands[p.id]=hands[p.id]||[{rank:"2",suit:"clubs"},{rank:"3",suit:"hearts"},{rank:"4",suit:"spades"}];
+  });
+  const totals={}; S.players.forEach(p=> totals[p.id]=sum(hands[p.id]||[]));
+
+  // If I declared: validate against lowest total; if not lowest → flat +50 on me.
+  if(callerId===S.myId){
+    let winnerId=S.players[0].id, best=Infinity;
+    S.players.forEach(p=>{const t=totals[p.id]??1e9; if(t<best){best=t; winnerId=p.id;}});
+    const penalties={}; if(winnerId!==callerId) penalties[callerId]=50;
+    finalizeRound(winnerId,hands,totals,penalties); return;
+  }
+
+  // Someone else declared: first-cut priority in turn order after caller
+  const callerTotal = totals[callerId] ?? 1e9;
+  const queue = orderAfter(callerId);
+
+  // check AIs before showing human (first that qualifies cuts immediately)
+  for(const pid of queue){
+    if(pid===S.myId) break; // stop before human; give them the modal
+    const ai = S.ais.find(a=>a.id===pid);
+    if(!ai) continue;
+    const t = totals[pid] ?? sum(hands[pid]||[]);
+    if(t < callerTotal){
+      // AI cuts first → AI wins immediately
+      finalizeRound(pid, hands, totals, {}); 
+      return;
     }
   }
-}));
 
-// Health check for Render
-app.get("/health", (_req, res) => res.status(200).send("ok"));
+  // If human is next in queue, show the challenge modal
+  if(queue.includes(S.myId)){
+    const decl=S.players.find(p=>p.id===callerId);
+    $("declName").textContent = decl?decl.name:"Opponent";
+    $("declCards").innerHTML = (hands[callerId]||[]).map(c=>`<div class="mini ${isRed(c.suit)?'red':''}">${label(c)}</div>`).join("");
+    PENDING={callerId,hands,totals,callerTotal};
+    $("challenge").classList.remove("hidden");
+    return;
+  }
 
-// Fallback to index.html (optional; helpful if you later add client-side routing)
-app.use((_req, res) => res.sendFile(path.join(__dirname, "index.html")));
+  // No one cut (no human, or everyone after caller had >= total) → let it stand
+  // Normal rule: lowest total wins; if caller not lowest → invalid Lakdi +50 on caller
+  let winnerId=S.players[0].id,best=Infinity;
+  S.players.forEach(p=>{const t=totals[p.id]??1e9; if(t<best){best=t; winnerId=p.id;}});
+  const penalties={}; if(winnerId!==callerId) penalties[callerId]=50;
+  finalizeRound(winnerId,hands,totals,penalties);
+}
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Lakdi static server listening on :${PORT}`);
+// Cut modal handlers
+$("btnCut").onclick=()=>resolveCut(true);
+$("btnLet").onclick=()=>resolveCut(false);
+
+function resolveCut(doCut){
+  if(!PENDING){$("challenge").classList.add("hidden");return;}
+  const {callerId,hands,totals,callerTotal}=PENDING; PENDING=null; $("challenge").classList.add("hidden");
+
+  if(!doCut){
+    // Stand: lowest wins; invalid Lakdi gives flat 50 to caller if not lowest
+    let win=S.players[0].id,best=Infinity;
+    S.players.forEach(p=>{const t=totals[p.id]??1e9; if(t<best){best=t; win=p.id;}});
+    const pen={}; if(win!==callerId) pen[callerId]=50;
+    finalizeRound(win,hands,totals,pen); return;
+  }
+
+  // Player called cut: valid only if my total < caller total; else flat +50 on me
+  const myT = totals[S.myId] ?? sum(hands[S.myId]||[]);
+  if(myT < callerTotal){
+    finalizeRound(S.myId, hands, totals, {});           // I win
+  }else{
+    finalizeRound(callerId, hands, totals, {[S.myId]:50}); // invalid cut → +50 on me; declare stands as winner OR lowest?
+    // When cut fails, spec says "person who declared lakdi loses" only if cut valid,
+    // so declarer keeps standing; but winner should still be the lowest overall.
+    // We chose declarer as winner for immediate feel; if you prefer pure lowest, change above:
+    // let win=S.players.reduce((w,p)=> (totals[p.id]<totals[w.id]?p:w),S.players[0]).id;
+    // finalizeRound(win, hands, totals, {[S.myId]:50});
+  }
+}
+
+/* ---------- Common finalize & modals ---------- */
+function finalizeRound(winnerId,hands,totals,penalties){
+  const grid=$("handsGrid"); grid.innerHTML="";
+  S.players.forEach(p=>{
+    let add;
+    if(p.id===winnerId) add=0;
+    else if(penalties[p.id]===50) add=50;        // flat invalid penalty
+    else add=totals[p.id]||0;
+
+    p.score += add;
+
+    const box=document.createElement("div");
+    const h=hands[p.id]||[];
+    box.className=`hbox ${p.id===winnerId?'win':''} ${penalties[p.id]===50?'pen':''}`;
+    const cards=h.map(c=>`<div class="mini ${isRed(c.suit)?'red':''}">${label(c)}</div>`).join('');
+    box.innerHTML = `
+      <div class="pname" style="margin-bottom:6px">${p.name}</div>
+      <div style="display:flex;flex-wrap:wrap">${cards}</div>
+      <div>Total: ${add}${penalties[p.id]===50?' (flat penalty)':''}</div>
+      ${p.id===winnerId?'<div style="color:#2ecc71;font-weight:900">Winner!</div>':''}
+    `;
+    grid.appendChild(box);
+  });
+  $("cut").classList.remove("hidden");
+}
+
+$("btnNext").onclick=()=>{
+  $("cut").classList.add("hidden"); renderScores();
+  const max=Math.max(...S.players.map(p=>p.score)); if(max>=S.endThreshold){ showOver(); return; }
+  S.round++; S.firstTurn=true; S.selected.length=0;
+  S.deck = deck(Math.ceil(S.players.length/6));
+  S.myHand = deal3(); if(S.isSingle) S.ais.forEach(ai=> ai.hand=deal3());
+  S.stockCount=S.deck.length;
+  S.pastTop = S.deck.length ? S.deck.pop() : null; S.stockCount=S.deck.length;
+  S.immCards=[]; S.hasDiscarded=false; S.hasDrawn=false;
+  S.turn = S.players[0].id;
+  renderSeats(); renderHand(); renderPiles(); renderInfo(); updateButtons();
+  if(S.turn===S.myId) startTimer(); else if(S.isSingle){ const ai=S.ais.find(a=>a.id===S.turn); if(ai) aiTurn(ai); }
+};
+
+function showOver(){
+  const box=$("finalRes"), ordered=[...S.players].sort((a,b)=>a.score-b.score);
+  box.innerHTML = ordered.map((p,i)=>`<div class="srow ${i===0?'lead':''}" style="margin:6px 0"><span>${i+1}. ${p.name}</span><span>${p.score} pts</span></div>`).join('');
+  $("over").classList.remove("hidden");
+}
+$("btnNew").onclick=()=>{
+  if(S.timer){clearInterval(S.timer);S.timer=null;}
+  Object.assign(S,{players:[],myHand:[],selected:[],turn:null,round:1,deck:[],stockCount:0,pastTop:null,immCards:[],firstTurn:true,hasDiscarded:false,hasDrawn:false,isSingle:false,ais:[]});
+  $("over").classList.add("hidden"); $("game").classList.add("hidden"); $("login").classList.remove("hidden");
+  $("name").value=""; $("room").value=""; $("lmsg").textContent=""; $("name").focus();
+};
+
+/* ---------- Entry ---------- */
+function startSingle(){
+  let name=($("name").value||"").trim(); if(!name) name="Player";
+  S.isSingle=true; S.players=[{id:S.myId,name,score:0}];
+  S.ais=[new AI("ai1","Alice (Easy)","easy"), new AI("ai2","Bob (Medium)","medium"), new AI("ai3","Charlie (Hard)","hard")];
+  S.ais.forEach(ai=>S.players.push({id:ai.id,name:ai.name,score:0}));
+
+  S.deck=deck(Math.ceil(S.players.length/6));
+  S.myHand=deal3(); S.ais.forEach(ai=> ai.hand=deal3());
+  S.stockCount=S.deck.length;
+
+  S.pastTop=S.deck.length?S.deck.pop():null; S.stockCount=S.deck.length;
+  S.turn=S.myId; S.firstTurn=true; S.hasDiscarded=false; S.hasDrawn=false;
+
+  $("login").classList.add("hidden"); $("game").classList.remove("hidden");
+  renderSeats(); renderScores(); renderHand(); renderPiles(); renderInfo(); updateButtons(); startTimer();
+}
+function startDemo(){
+  let name=($("name").value||"").trim(); if(!name) name="Player";
+  $("lmsg").textContent="Starting demo (local)…"; $("lmsg").className="msg status";
+  S.isSingle=false; S.players=[{id:S.myId,name,score:0},{id:"p2",name:"Demo Player 2",score:0},{id:"p3",name:"Demo Player 3",score:0}];
+  S.deck=deck(1); S.myHand=deal3(); S.stockCount=S.deck.length;
+  S.pastTop=S.deck.length?S.deck.pop():null; S.stockCount=S.deck.length;
+  S.turn=S.myId; S.firstTurn=true; S.hasDiscarded=false; S.hasDrawn=false;
+  setTimeout(()=>{ $("login").classList.add("hidden"); $("game").classList.remove("hidden");
+    renderSeats(); renderScores(); renderHand(); renderPiles(); renderInfo(); updateButtons(); startTimer(); },250);
+}
+
+/* Wire-up */
+$("btnCPU").onclick=startSingle; $("btnDemo").onclick=startDemo;
+$("btnDiscard").onclick=doDiscard; $("btnDrawS").onclick=drawStock; $("btnDrawP").onclick=drawPast; $("btnLakdi").onclick=callLakdi;
+$("stockPile").onclick=()=>{ if(!$("btnDrawS").disabled) drawStock(); };
+$("pastPile").onclick =()=>{ if(!$("btnDrawP").disabled) drawPast(); };
+
+document.addEventListener("keydown",(e)=>{
+  if($("game").classList.contains("hidden")) return;
+  if(S.turn!==S.myId) return;
+  if(e.key==="1"||e.key==="2"||e.key==="3"){ const ix=parseInt(e.key,10)-1; if(ix<S.myHand.length && !S.hasDiscarded) select(ix); }
+  else if((e.key==="d"||e.key==="D") && !$("btnDiscard").disabled) doDiscard();
+  else if((e.key==="s"||e.key==="S") && !$("btnDrawS").disabled) drawStock();
+  else if((e.key==="f"||e.key==="F") && !$("btnDrawP").disabled) drawPast();
+  else if((e.key==="l"||e.key==="L") && !$("btnLakdi").disabled) callLakdi();
 });
+document.addEventListener("DOMContentLoaded",()=>{ $("name").focus(); $("room").addEventListener("input",(e)=> e.target.value=(e.target.value||"").toUpperCase()); });
+</script>
+</body>
+</html>

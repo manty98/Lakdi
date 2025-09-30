@@ -1,6 +1,13 @@
 {
-  "name": "lakdi-server",
-  "type": "module",
-  "scripts": { "start": "node index.js" },
-  "dependencies": { "express":"^4", "socket.io":"^4", "cors":"^2" }
+  "name": "lakdi-single",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lakdi card game - single-file client + single-file server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node ./server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
 }
