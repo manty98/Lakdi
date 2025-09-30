@@ -1,133 +1,36 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Lakdi - Multiplayer Card Game</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <style>
-    /* --- simplified from your uploaded UI --- */
-    :root{--bg1:#1a4f3a;--bg2:#0d2818;--gold:#ffd700;--card-b:#cbd5e1}
-    body{margin:0;background:linear-gradient(135deg,var(--bg1),var(--bg2));color:#fff;font-family:sans-serif}
-    .connection-status{position:fixed;top:10px;left:10px;padding:6px 10px;background:rgba(0,0,0,.4);border-radius:8px;z-index:50}
-    .login-wrap{height:100vh;display:flex;justify-content:center;align-items:center}
-    .login-card{background:rgba(255,255,255,.1);padding:20px;border-radius:12px;width:300px;text-align:center}
-    .input{width:100%;padding:10px;margin:6px 0;border-radius:8px;border:none}
-    .button{width:100%;padding:10px;margin:6px 0;border-radius:8px;cursor:pointer;font-weight:bold}
-    .btn-join{background:#e74c3c;color:#fff}.btn-create{background:#3498db;color:#fff}.btn-cpu{background:#27ae60;color:#fff}
-    .game-container{height:100vh;display:none;flex-direction:column;position:relative}
-    .scoreboard{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);padding:10px;border-radius:8px}
-    .game-table{flex:1;display:flex;align-items:center;justify-content:center;gap:30px;position:relative}
-    .pile{width:80px;height:110px;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer}
-    .stock{background:linear-gradient(135deg,#2c3e50,#34495e);border:2px solid #3498db}
-    .discard{background:#fff;color:#000;border:2px solid #e74c3c}
-    .action-bar{position:absolute;bottom:160px;left:50%;transform:translateX(-50%);display:flex;gap:10px}
-    .action-btn{padding:10px 14px;border-radius:8px;cursor:pointer;font-weight:bold}
-    .btn-discard{background:#c0392b;color:#fff}.btn-draw-s{background:#2980b9;color:#fff}.btn-draw-d{background:#b58900;color:#fff}.btn-lakdi{background:#27ae60;color:#fff}
-    .player-hand{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:10px}
-    .card{width:80px;height:110px;background:#fff;color:#000;border:2px solid var(--card-b);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer}
-    .card.red{color:#e74c3c}.card.selected{transform:translateY(-15px);border-color:var(--gold)}
-    .turn-timer{position:fixed;right:10px;bottom:10px;width:40px;height:40px;border-radius:50%;border:3px solid #ffd700;display:none;align-items:center;justify-content:center;font-weight:bold}
-    .modal{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;align-items:center;justify-content:center}
-    .modal-content{background:#222;padding:20px;border-radius:10px;color:#fff;width:90%;max-width:600px}
-  </style>
-</head>
-<body>
-  <div id="status" class="connection-status">🟢 Ready</div>
+// server.js — single-file static server for your all-in-one index.html
+const path = require("path");
+const express = require("express");
+const compression = require("compression");
+const helmet = require("helmet");
 
-  <!-- Lobby -->
-  <section id="lobby" class="login-wrap">
-    <div class="login-card">
-      <h1>Lakdi</h1>
-      <input id="nameInput" class="input" placeholder="Enter name"/>
-      <input id="codeInput" class="input" placeholder="Room code (optional)"/>
-      <button id="joinBtn" class="button btn-join">Join Multiplayer</button>
-      <button id="createBtn" class="button btn-create">Create Room</button>
-      <button id="cpuBtn" class="button btn-cpu">Play vs Computer</button>
-      <div id="lobbyMsg" style="margin-top:8px;color:#ffd700"></div>
-    </div>
-  </section>
+const app = express();
 
-  <!-- Game -->
-  <section id="game" class="game-container">
-    <div class="scoreboard">
-      <div id="roomInfo"></div>
-      <div id="scores"></div>
-    </div>
-    <div class="game-table">
-      <div id="stockPile" class="pile stock"><div>Stock</div><div id="stockCount"></div></div>
-      <div id="immediatePile" class="pile discard"><div>Immediate</div><div id="immTop"></div></div>
-      <div id="pastPile" class="pile discard"><div>Past</div><div id="pastTop"></div></div>
-    </div>
-    <div class="action-bar">
-      <button id="btnDiscard" class="action-btn btn-discard" disabled>Discard</button>
-      <button id="btnDrawS" class="action-btn btn-draw-s" disabled>Draw Stock</button>
-      <button id="btnDrawD" class="action-btn btn-draw-d" disabled>Draw Past</button>
-      <button id="btnLakdi" class="action-btn btn-lakdi" disabled>Call Lakdi</button>
-    </div>
-    <div id="hand" class="player-hand"></div>
-  </section>
+// Basic hardening + gzip
+app.use(helmet({
+  contentSecurityPolicy: false, // your inline <script> needs this off
+}));
+app.use(compression());
 
-  <!-- Timer -->
-  <div id="turnTimer" class="turn-timer"><span id="tleft">30</span></div>
+// Serve the folder this file is in (index.html + assets if any)
+app.use(express.static(__dirname, {
+  extensions: ["html"], // so "/" loads index.html
+  maxAge: "1h",
+  setHeaders(res, filePath) {
+    if (filePath.endsWith("index.html")) {
+      // don’t cache the HTML shell
+      res.setHeader("Cache-Control", "no-store");
+    }
+  }
+}));
 
-  <!-- Showdown -->
-  <div id="showdown" class="modal">
-    <div class="modal-content">
-      <h2>Round Results</h2>
-      <div id="handsGrid"></div>
-      <button id="closeShowdown">Continue</button>
-    </div>
-  </div>
+// Health check for Render
+app.get("/health", (_req, res) => res.status(200).send("ok"));
 
-<script>
-const $=id=>document.getElementById(id);
-const suit={hearts:"♥",diamonds:"♦",clubs:"♣",spades:"♠"};
-const isRed=s=>["hearts","diamonds"].includes(s);
-const val=r=>r==="A"?1:r==="J"?11:r==="Q"?12:r==="K"?13:parseInt(r,10);
-const sum=h=>h.reduce((a,c)=>a+val(c.rank),0);
-const label=c=>`${c.rank}${suit[c.suit]}`;
-const socket=io({transports:["websocket","polling"]});
-let me=null,room=null,selectedIdx=[],timer=null,timeLeft=30;
+// Fallback to index.html (optional; helpful if you later add client-side routing)
+app.use((_req, res) => res.sendFile(path.join(__dirname, "index.html")));
 
-function renderHand(){
-  $("hand").innerHTML="";
-  (room.hands?.[me.id]||[]).forEach((c,i)=>{
-    const div=document.createElement("div");
-    div.className=`card ${isRed(c.suit)?"red":""} ${selectedIdx.includes(i)?"selected":""}`;
-    div.textContent=label(c);
-    div.onclick=()=>{toggleCard(i);};
-    $("hand").appendChild(div);
-  });
-}
-function toggleCard(i){
-  if(selectedIdx.includes(i)) selectedIdx=selectedIdx.filter(x=>x!==i);
-  else selectedIdx.push(i);
-  renderHand();
-  updateButtons();
-}
-function validDiscard(){
-  if(selectedIdx.length<1||selectedIdx.length>3) return false;
-  const mine=room.hands[me.id];
-  return selectedIdx.every(ix=>mine[ix].rank===mine[selectedIdx[0]].rank);
-}
-function updateButtons(){
-  const myTurn=room.currentTurn===me.id;
-  $("btnDiscard").disabled=!(myTurn && validDiscard());
-  $("btnDrawS").disabled=!(myTurn && room.phase==="draw");
-  $("btnDrawD").disabled=!(myTurn && room.phase==="draw" && room.pastTop);
-  $("btnLakdi").disabled=!(myTurn && room.phase==="discard"); // can replace discard+draw
-}
-$("btnDiscard").onclick=()=>{if(validDiscard())socket.emit("discard",{code:room.code,idx:selectedIdx});selectedIdx=[];};
-$("btnDrawS").onclick=()=>socket.emit("draw",{code:room.code,source:"stock"});
-$("btnDrawD").onclick=()=>socket.emit("draw",{code:room.code,source:"past"});
-$("btnLakdi").onclick=()=>socket.emit("call_lakdi",{code:room.code});
-socket.on("room_state",st=>{room=st;if(!me)me=st.players.find(p=>p.id===socket.id);renderHand();updateButtons();$("stockCount").textContent=st.stockCount;$("immTop").textContent=st.immediateTop?label(st.immediateTop):"";$("pastTop").textContent=st.pastTop?label(st.pastTop):"";});
-socket.on("showdown_summary",msg=>{const grid=$("handsGrid");grid.innerHTML="";msg.players.forEach(p=>{const div=document.createElement("div");div.textContent=p.name+" : "+(msg.hands[p.id]||[]).map(label).join(" ");grid.appendChild(div);});$("showdown").style.display="flex";});
-$("closeShowdown").onclick=()=>{$("showdown").style.display="none";socket.emit("next_round",{code:room.code});};
-$("createBtn").onclick=()=>{socket.emit("create_room",{name:$("nameInput").value||"Player"},res=>{me=res.me;$("lobby").style.display="none";$("game").style.display="flex";$("roomInfo").textContent="Room: "+res.code;});};
-$("joinBtn").onclick=()=>{socket.emit("join_room",{name:$("nameInput").value||"Player",code:$("codeInput").value},res=>{me=res.me;$("lobby").style.display="none";$("game").style.display="flex";$("roomInfo").textContent="Room: "+res.code;});};
-$("cpuBtn").onclick=()=>{socket.emit("single_player",{name:$("nameInput").value||"Player"},res=>{me=res.me;$("lobby").style.display="none";$("game").style.display="flex";$("roomInfo").textContent="";});};
-</script>
-</body>
-</html>
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Lakdi static server listening on :${PORT}`);
+});
