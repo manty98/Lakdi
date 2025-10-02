@@ -5,177 +5,162 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Lakdi – Multiplayer Card Game</title>
 <style>
-  /* ===== Responsive, non-overlapping layout ===== */
-*{box-sizing:border-box;margin:0;padding:0}
-html{font-size:16px}
-button,input{font:inherit}
-:root{
-  --bg1:#0f3a2a; --bg2:#0b2417;
-  --gold:#ffd700; --muted:#bcd1ff;
-  --panel:rgba(255,255,255,.10); --panel-b:rgba(255,255,255,.18);
-  --ok:#23b26d; --warn:#b58900; --err:#e74c3c; --blue:#2d7fe3;
-
-  /* Key size tokens (use both vw and vh to avoid monsters) */
-  --pileW: clamp(84px, min(10vw, 14vh), 120px);
-  --cardW: clamp(64px, min(8.5vw, 12vh), 92px);
-  --gapC: clamp(8px, 1.2vw, 16px);
-
-  /* Derived */
-  --ratio: 4/3;
-  --pileH: calc(var(--pileW) * var(--ratio));
-  --cardH: calc(var(--cardW) * var(--ratio));
-
-  /* Reserved space so center never collides with the hand */
-  --handReserve: calc(var(--cardH) + 72px); /* 72 = hand gap + a11y padding */
-}
-
-body{
-  font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-  color:#fff;height:100vh;background:linear-gradient(135deg,var(--bg1),var(--bg2));
-  overflow:hidden
-}
-.hidden{display:none!important}
-
-/* Login */
-.login{display:flex;align-items:center;justify-content:center;height:100%}
-.card{background:var(--panel);border:1px solid var(--panel-b);backdrop-filter:blur(8px);
-  border-radius:20px;padding:28px;width:min(420px,92vw);box-shadow:0 18px 36px rgba(0,0,0,.28)}
-.card h1{font-size:42px;margin-bottom:16px;line-height:1;background:linear-gradient(45deg,var(--gold),#fffbe6);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.row{display:flex;gap:10px;margin:8px 0}
-.input{flex:1;padding:14px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.07);color:#fff}
-.btn{padding:14px 16px;border:none;border-radius:12px;font-weight:900;cursor:pointer;transition:.12s;
-  box-shadow:0 8px 18px rgba(0,0,0,.2)}
-.btn:active{transform:translateY(1px)}
-.btn-ai{background:linear-gradient(45deg,#27ae60,var(--ok))}
-.btn-go{background:linear-gradient(45deg,#ff6b6b,#ee5a24)}
-.msg{font-size:14px;margin-top:8px}.msg.status{color:#8ab4ff}.msg.error{color:#ffb4b4}
-
-/* Game shell */
-.wrap{height:100vh;display:flex;flex-direction:column;position:relative}
-.table{
-  flex:1;display:flex;align-items:center;justify-content:center;position:relative;
-  padding:22px;
-  padding-bottom: calc(var(--handReserve) + 16px); /* reserve space for hand */
-}
-
-/* Piles */
-.center{display:flex;align-items:center;justify-content:center;gap:clamp(12px,2vw,24px)}
-.pile{
-  width:var(--pileW); height:var(--pileH); aspect-ratio:3/4;
-  border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:6px 8px; user-select:none
-}
-.pile .title{font-size:clamp(10px,1.2vw,12px);line-height:1.1;margin-top:6px;opacity:.9;text-align:center}
-.pile.stock{background:linear-gradient(135deg,#2c3e50,#34495e);border:2px solid #3498db}
-.pile.discard{background:#fff;color:#111;border:2px solid var(--err);font-weight:900}
-.clickable{cursor:pointer;transition:transform .12s}.clickable:hover{transform:scale(1.05)}
-.disabled{opacity:.55;filter:grayscale(.5);pointer-events:none}
-
-/* Players (semicircle) */
-.players{position:absolute;inset:0;pointer-events:none}
-.seat{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:8px;min-width:120px}
-.seat.active{animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.76}}
-.pinfo{background:var(--panel);border:1px solid var(--panel-b);padding:10px 12px;border-radius:14px;text-align:center}
-.pname{font-weight:900}.pscore{font-size:13px;color:var(--gold);margin-top:2px}
-.backs{display:flex;gap:0;margin-left:-12px}
-.back{width:28px;height:40px;border-radius:6px;background:linear-gradient(135deg,#2c3e50,#34495e);border:1px solid #3498db;margin-left:-12px}
-
-/* Hand (never overlaps center) */
-.hand{
-  position:absolute; left:50%; transform:translateX(-50%);
-  bottom:24px; display:flex; gap:12px; z-index:5;
-}
-.cardv{
-  width:var(--cardW); height:var(--cardH); aspect-ratio:3/4;
-  background:#fff;border-radius:12px;border:2px solid #cbd5e1;color:#111;display:flex;align-items:center;justify-content:center;
-  font-weight:900;font-size:clamp(18px,2.2vw,26px);cursor:pointer;transition:.16s
-}
-.cardv.red{color:#e74c3c}
-.cardv.selected{transform:translateY(-14px);border-color:var(--gold);box-shadow:0 12px 20px rgba(0,0,0,.25)}
-.cardv:active{transform:translateY(-6px)}
-
-/* Actions — sits above the hand by the card height */
-.actions{
-  position:absolute; left:50%; transform:translateX(-50%);
-  bottom: calc(var(--cardH) + 44px);
-  display:flex; gap:12px; flex-wrap:wrap; justify-content:center; z-index:4;
-}
-.act{padding:12px 16px;border:none;border-radius:10px;font-weight:900;cursor:pointer;transition:opacity .1s}
-.act.dis{background:var(--err);color:#fff}
-.act.ds{background:var(--blue);color:#fff}
-.act.dp{background:var(--warn);color:#fff}
-.act.lk{background:var(--ok);color:#fff}
-.act[disabled]{opacity:.4;filter:grayscale(.5);cursor:not-allowed;pointer-events:none}
-.hint{width:100%;text-align:center;font-size:13px;color:var(--muted);margin-top:6px}
-
-/* Score / Info / Timer */
-.score{position:absolute;bottom:20px;left:20px;background:rgba(0,0,0,.85);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:12px;min-width:240px;z-index:6}
-.score h3{margin-bottom:6px;color:var(--gold);text-align:center}
-.srow{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-radius:8px;margin:4px 0;background:rgba(255,255,255,.06)}
-.srow.lead{background:rgba(46,204,113,.28)}
-.info{position:absolute;top:20px;right:20px;background:rgba(0,0,0,.8);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:10px;z-index:6}
-.info .turn{color:var(--gold);font-weight:900}.info .round{color:#8ab4ff;font-size:13px}
-
-.timer{position:fixed;left:20px;top:20px;width:52px;height:52px;border-radius:50%;border:4px solid rgba(255,215,0,.28);display:flex;align-items:center;justify-content:center;color:var(--gold);font-weight:900;z-index:8;background:rgba(0,0,0,.35)}
-.timer .ring{position:absolute;inset:-4px;border-radius:50%;border:4px solid transparent;border-top-color:var(--gold);animation:spin 1s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-
-/* Modals */
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;z-index:40}
-.mc{background:linear-gradient(135deg,var(--bg1),var(--bg2));border:1px solid rgba(255,255,255,.28);border-radius:16px;padding:18px 16px;width:min(920px,92vw);max-height:82vh;overflow:auto}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:14px}
-.hbox{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px}
-.hbox.win{border-color:#2ecc71;background:rgba(46,204,113,.22)}
-.hbox.pen{border-color:#e74c3c;background:rgba(231,76,60,.22)}
-.mini{width:46px;height:60px;background:#fff;border:2px solid #cbd5e1;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;margin:2px;color:#111}
-.mini.red{color:#e74c3c}
-
-/* Keyboard help */
-.help{position:fixed;right:22px;bottom:18px;background:rgba(0,0,0,.7);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:8px 10px;font-size:13px;z-index:7}
-.kbd{display:inline-block;padding:2px 6px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#111;font-weight:800;font-size:12px}
-
-/* --- Compact mode for short screens --- */
-@media (max-height: 720px){
+  /* ====== Core variables & responsive sizing ====== */
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:16px}
+  button,input{font:inherit}
   :root{
-    --pileW: clamp(78px, min(9vw, 12vh), 108px);
-    --cardW: clamp(58px, min(7.5vw, 10.5vh), 84px);
-    --handReserve: calc(var(--cardH) + 60px);
-  }
-  .center{gap:clamp(8px,1.2vw,14px)}
-}
+    --bg1:#0f3a2a; --bg2:#0b2417;
+    --gold:#ffd700; --muted:#bcd1ff;
+    --panel:rgba(255,255,255,.10); --panel-b:rgba(255,255,255,.18);
+    --ok:#23b26d; --warn:#b58900; --err:#e74c3c; --blue:#2d7fe3;
 
-/* Ultra-compact (phones in landscape / very short windows) */
-@media (max-height: 600px){
-  :root{
-    --pileW: clamp(68px, min(8vw, 10vh), 96px);
-    --cardW: clamp(52px, min(6.5vw, 9.2vh), 76px);
-    --handReserve: calc(var(--cardH) + 54px);
-  }
-  .score{min-width:210px}
-}
+    --pileW: clamp(84px, min(10vw, 14vh), 120px);
+    --cardW: clamp(64px, min(8.5vw, 12vh), 92px);
+    --gapC: clamp(8px, 1.2vw, 16px);
 
+    --ratio: 4/3;
+    --pileH: calc(var(--pileW) * var(--ratio));
+    --cardH: calc(var(--cardW) * var(--ratio));
+    --handReserve: calc(var(--cardH) + 72px);
+  }
+  body{
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    color:#fff;height:100vh;background:linear-gradient(135deg,var(--bg1),var(--bg2));
+    overflow:hidden
+  }
+  .hidden{display:none!important}
+
+  /* ===== LOBBY (new UI) ===== */
+  .lobby{height:100%;display:flex;align-items:center;justify-content:center;padding:28px}
+  .lobby-card{
+    width:min(820px,92vw);background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.22);
+    backdrop-filter:blur(8px);border-radius:24px;padding:clamp(18px,4vw,40px);box-shadow:0 18px 36px rgba(0,0,0,.25)
+  }
+  .brand{display:flex;align-items:center;gap:16px;margin-bottom:clamp(12px,2.4vw,24px)}
+  .logo-sq{width:clamp(36px,5vw,56px);height:clamp(36px,5vw,56px);border-radius:14px;background:#ffd33d}
+  .brand h1{font-size:clamp(32px,5vw,56px);line-height:1;margin:0;font-weight:900;color:#ffd700}
+  .lobby .input{
+    width:100%;padding:18px 16px;border-radius:14px;border:1px solid rgba(255,255,255,.25);
+    background:rgba(255,255,255,.08);color:#fff;outline:none
+  }
+  .lobby .input::placeholder{color:rgba(255,255,255,.65)}
+  .row{display:flex;gap:12px;margin-top:14px}
+  .btn-lg{
+    width:100%;padding:18px 18px;border:none;border-radius:14px;color:#fff;font-weight:900;
+    cursor:pointer;box-shadow:0 12px 22px rgba(0,0,0,.25);transition:transform .08s ease
+  }
+  .btn-lg:active{transform:translateY(1px)}
+  .btn-computer{background:linear-gradient(45deg,#2ecc71,#18b764)}
+  .btn-create{background:linear-gradient(45deg,#2563eb,#1d4ed8)}
+  .btn-join{background:linear-gradient(45deg,#f39c12,#e67e22)}
+  .sep{display:flex;align-items:center;justify-content:center;gap:12px;color:rgba(255,255,255,.6);margin:18px 0}
+  .sep::before,.sep::after{content:"";height:1px;width:56px;background:rgba(255,255,255,.25);border-radius:1px}
+  .msg{font-size:14px;margin-top:8px}.msg.status{color:#8ab4ff}.msg.error{color:#ffb4b4}
+
+  /* ===== GAME SHELL ===== */
+  .wrap{height:100vh;display:flex;flex-direction:column;position:relative}
+  .table{flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:22px;padding-bottom:calc(var(--handReserve) + 16px)}
+
+  .center{display:flex;align-items:center;justify-content:center;gap:clamp(12px,2vw,24px)}
+  .pile{
+    width:var(--pileW);height:var(--pileH);aspect-ratio:3/4;border-radius:12px;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;padding:6px 8px;user-select:none
+  }
+  .pile .title{font-size:clamp(10px,1.2vw,12px);line-height:1.1;margin-top:6px;opacity:.9;text-align:center}
+  .pile.stock{background:linear-gradient(135deg,#2c3e50,#34495e);border:2px solid #3498db}
+  .pile.discard{background:#fff;color:#111;border:2px solid var(--err);font-weight:900}
+  .clickable{cursor:pointer;transition:transform .12s}.clickable:hover{transform:scale(1.05)}
+  .disabled{opacity:.55;filter:grayscale(.5);pointer-events:none}
+
+  .players{position:absolute;inset:0;pointer-events:none}
+  .seat{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:8px;min-width:120px}
+  .seat.active{animation:pulse 2s infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.76}}
+  .pinfo{background:var(--panel);border:1px solid var(--panel-b);padding:10px 12px;border-radius:14px;text-align:center}
+  .pname{font-weight:900}.pscore{font-size:13px;color:var(--gold);margin-top:2px}
+  .backs{display:flex;gap:0;margin-left:-12px}.back{width:28px;height:40px;border-radius:6px;background:linear-gradient(135deg,#2c3e50,#34495e);border:1px solid #3498db;margin-left:-12px}
+
+  .hand{position:absolute;left:50%;transform:translateX(-50%);bottom:24px;display:flex;gap:12px;z-index:5}
+  .cardv{
+    width:var(--cardW);height:var(--cardH);aspect-ratio:3/4;background:#fff;border-radius:12px;border:2px solid #cbd5e1;color:#111;
+    display:flex;align-items:center;justify-content:center;font-weight:900;font-size:clamp(18px,2.2vw,26px);cursor:pointer;transition:.16s
+  }
+  .cardv.red{color:#e74c3c}.cardv.selected{transform:translateY(-14px);border-color:var(--gold);box-shadow:0 12px 20px rgba(0,0,0,.25)}
+  .cardv:active{transform:translateY(-6px)}
+
+  .actions{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--cardH) + 44px);display:flex;gap:12px;flex-wrap:wrap;justify-content:center;z-index:4}
+  .act{padding:12px 16px;border:none;border-radius:10px;font-weight:900;cursor:pointer;transition:opacity .1s}
+  .act.dis{background:var(--err);color:#fff}.act.ds{background:var(--blue);color:#fff}.act.dp{background:var(--warn);color:#fff}.act.lk{background:var(--ok);color:#fff}
+  .act[disabled]{opacity:.4;filter:grayscale(.5);cursor:not-allowed;pointer-events:none}
+  .hint{width:100%;text-align:center;font-size:13px;color:var(--muted);margin-top:6px}
+
+  .score{position:absolute;bottom:20px;left:20px;background:rgba(0,0,0,.85);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:12px;min-width:240px;z-index:6}
+  .score h3{margin-bottom:6px;color:var(--gold);text-align:center}
+  .srow{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-radius:8px;margin:4px 0;background:rgba(255,255,255,.06)}
+  .srow.lead{background:rgba(46,204,113,.28)}
+  .info{position:absolute;top:20px;right:20px;background:rgba(0,0,0,.8);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:10px;z-index:6}
+  .info .turn{color:var(--gold);font-weight:900}.info .round{color:#8ab4ff;font-size:13px}
+
+  .timer{position:fixed;left:20px;top:20px;width:52px;height:52px;border-radius:50%;border:4px solid rgba(255,215,0,.28);display:flex;align-items:center;justify-content:center;color:var(--gold);font-weight:900;z-index:8;background:rgba(0,0,0,.35)}
+  .timer .ring{position:absolute;inset:-4px;border-radius:50%;border:4px solid transparent;border-top-color:var(--gold);animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;z-index:40}
+  .mc{background:linear-gradient(135deg,var(--bg1),var(--bg2));border:1px solid rgba(255,255,255,.28);border-radius:16px;padding:18px 16px;width:min(920px,92vw);max-height:82vh;overflow:auto}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:14px}
+  .hbox{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px}
+  .hbox.win{border-color:#2ecc71;background:rgba(46,204,113,.22)}
+  .hbox.pen{border-color:#e74c3c;background:rgba(231,76,60,.22)}
+  .mini{width:46px;height:60px;background:#fff;border:2px solid #cbd5e1;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;margin:2px;color:#111}
+  .mini.red{color:#e74c3c}
+
+  .help{position:fixed;right:22px;bottom:18px;background:rgba(0,0,0,.7);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:8px 10px;font-size:13px;z-index:7}
+  .kbd{display:inline-block;padding:2px 6px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#111;font-weight:800;font-size:12px}
+
+  @media (max-height: 720px){
+    :root{--pileW: clamp(78px, min(9vw, 12vh), 108px);--cardW: clamp(58px, min(7.5vw, 10.5vh), 84px);--handReserve: calc(var(--cardH) + 60px)}
+    .center{gap:clamp(8px,1.2vw,14px)}
+  }
+  @media (max-height: 600px){
+    :root{--pileW: clamp(68px, min(8vw, 10vh), 96px);--cardW: clamp(52px, min(6.5vw, 9.2vh), 76px);--handReserve: calc(var(--cardH) + 54px)}
+    .score{min-width:210px}
+  }
 </style>
 </head>
 <body>
 
-<!-- Login -->
-<section id="login" class="login">
-  <div class="card">
-    <h1>🃏 Lakdi</h1>
+<!-- ===== LOBBY ===== -->
+<section id="login" class="lobby">
+  <div class="lobby-card">
+    <div class="brand">
+      <div class="logo-sq"></div><h1>Lakdi</h1>
+    </div>
+
     <div class="row"><input id="name" class="input" placeholder="Enter your name" maxlength="20"/></div>
-    <div class="row"><button id="btnCPU" class="btn btn-ai" style="flex:1">🤖 Play vs Computer</button></div>
-    <div class="row" style="justify-content:center;color:rgba(255,255,255,.6)">— OR —</div>
-    <div class="row"><input id="room" class="input" placeholder="Room code (demo only)" maxlength="6"/></div>
-    <div class="row"><button id="btnDemo" class="btn btn-go" style="flex:1">🌐 Local Demo (no network)</button></div>
+    <div class="row"><button id="btnCPU" class="btn-lg btn-computer">🤖 Play vs Computer</button></div>
+    <div class="sep">— OR —</div>
+    <div class="row"><input id="room" class="input" placeholder="Room code (ABC123)" maxlength="6"/></div>
+    <div class="row" style="gap:16px">
+      <button id="btnCreate" class="btn-lg btn-create" style="flex:1">✚ Create Room</button>
+      <button id="btnJoin"   class="btn-lg btn-join"   style="flex:1">🔗 Join Room</button>
+    </div>
     <div id="lmsg" class="msg status"></div>
   </div>
 </section>
 
-<!-- Game -->
+<!-- ===== GAME ===== -->
 <section id="game" class="wrap hidden">
-  <div class="info"><div id="infTurn" class="turn">Your Turn</div><div id="infRound" class="round">Round 1</div></div>
+  <div class="info">
+    <div id="infTurn" class="turn">Your Turn</div>
+    <div id="infRound" class="round">Round 1</div>
+  </div>
+
+  <!-- Host-only start button (shown when phase === 'lobby') -->
+  <button id="btnStart" class="btn-lg btn-create hidden"
+          style="position:absolute;top:20px;right:160px;width:auto;padding:10px 14px;border-radius:10px;z-index:7">
+    ▶ Start Game
+  </button>
+
   <div class="score"><h3>Scores</h3><div id="scoreList"></div></div>
 
   <div class="table">
@@ -183,16 +168,13 @@ body{
 
     <div class="center">
       <div id="pastPile" class="pile discard disabled">
-        <div id="pastTop">Empty</div>
-        <div class="title">Past (drawable)</div>
+        <div id="pastTop">Empty</div><div class="title">Past (drawable)</div>
       </div>
       <div id="stockPile" class="pile stock clickable">
-        <div>Stock</div><div id="stockCount">0</div>
-        <div class="title">Always draw</div>
+        <div>Stock</div><div id="stockCount">0</div><div class="title">Always draw</div>
       </div>
       <div id="immPile" class="pile discard disabled">
-        <div id="immTop">—</div>
-        <div class="title">Immediate (yours)</div>
+        <div id="immTop">—</div><div class="title">Immediate (yours)</div>
       </div>
     </div>
 
@@ -216,39 +198,42 @@ body{
   </div>
 </section>
 
-<!-- Cut Challenge (when someone else declares Lakdi) -->
+<!-- Cut challenge modal -->
 <div id="challenge" class="modal hidden">
   <div class="mc">
     <h2> Lakdi declared by <span id="declName"></span> </h2>
     <div id="declCards" style="display:flex;flex-wrap:wrap;margin:12px 0;"></div>
     <div style="text-align:center">
-      <button id="btnCut" class="btn btn-go" style="padding:10px 14px;border-radius:10px;margin-right:10px">Call Cut</button>
-      <button id="btnLet" class="btn btn-ai" style="padding:10px 14px;border-radius:10px">Let it stand</button>
+      <button id="btnCut" class="btn-lg btn-create" style="width:auto;padding:10px 14px;border-radius:10px;margin-right:10px">Call Cut</button>
+      <button id="btnLet" class="btn-lg btn-computer" style="width:auto;padding:10px 14px;border-radius:10px">Let it stand</button>
     </div>
   </div>
 </div>
 
-<!-- Cut Results -->
+<!-- Round results -->
 <div id="cut" class="modal hidden">
   <div class="mc">
     <h2>Round Results</h2>
     <div id="handsGrid" class="grid"></div>
     <div style="text-align:center;margin-top:8px">
-      <button id="btnNext" class="btn btn-go" style="padding:10px 14px;border-radius:10px">Continue</button>
+      <button id="btnNext" class="btn-lg btn-join" style="width:auto;padding:10px 14px;border-radius:10px">Continue</button>
     </div>
   </div>
 </div>
 
-<!-- Game Over -->
+<!-- Game over -->
 <div id="over" class="modal hidden">
   <div class="mc">
     <h2>Game Over</h2>
     <div id="finalRes" style="margin:10px 0 14px"></div>
     <div style="text-align:center">
-      <button id="btnNew" class="btn btn-go" style="padding:10px 14px;border-radius:10px">New Game</button>
+      <button id="btnNew" class="btn-lg btn-join" style="width:auto;padding:10px 14px;border-radius:10px">New Game</button>
     </div>
   </div>
 </div>
+
+<!-- Socket.IO (CDN) -->
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 
 <script>
 /* ---------- Helpers ---------- */
@@ -258,20 +243,29 @@ const isRed=s=>s==="hearts"||s==="diamonds";
 const v=r=>r==="A"?1:r==="J"?11:r==="Q"?12:r==="K"?13:parseInt(r,10);
 const sum=hand=>hand.reduce((a,c)=>a+v(c.rank),0);
 const label=c=>c?`${c.rank}${sym[c.suit]}`:"";
+function lobbyMsg(msg,type="status"){const el=$("lmsg");el.textContent=msg;el.className=`msg ${type==="error"?"error":"status"}`;}
 
-/* ---------- State ---------- */
+/* ---------- Socket ---------- */
+const SOCKET_URL = "https://lakdi.onrender.com";
+const socket = io(SOCKET_URL, { path: "/socket.io", transports:["websocket"] });
+
+/* ---------- Local state (client view) ---------- */
+let MODE="demo"; // "demo" (local single-player AI/demo) or "net" (server)
 const S={
-  players:[], myId:"me", turn:null, round:1,
+  players:[], myId:null, myName:null, roomCode:null,
+  turn:null, round:1,
   deck:[], stockCount:0,
   myHand:[], selected:[],
   pastTop:null, immCards:[],
   firstTurn:true, hasDiscarded:false, hasDrawn:false,
   timer:null, endThreshold:200,
-  isSingle:false, ais:[]
+  isSingle:false, ais:[],
+  phase:"lobby", isHost:false
 };
-// pending challenge context
-let PENDING=null;
+let PENDING=null; // cut challenge staging
+let LAST_STATE=null; // previous server room_state snapshot (to freeze past card)
 
+/* ---------- Single-player (unchanged AI) ---------- */
 class AI{
   constructor(id,name,level="medium"){this.id=id;this.name=name;this.level=level;this.hand=[];this.score=0;}
   val(r){return v(r)} total(){return this.hand.reduce((a,c)=>a+this.val(c.rank),0)}
@@ -288,11 +282,7 @@ class AI{
   wantLakdi(){const t=this.total();if(this.level==="easy")return t<=8;if(this.level==="medium")return t<=6;return t<=5;}
 }
 
-/* ---------- Setup ---------- */
-function deck(n=1){const suits=["hearts","diamonds","clubs","spades"],ranks=["A","2","3","4","5","6","7","8","9","10","J","Q","K"];const d=[];for(let k=0;k<n;k++)for(const s of suits)for(const r of ranks)d.push({suit:s,rank:r});for(let i=d.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[d[i],d[j]]=[d[j],d[i]];}return d;}
-function deal3(){const h=[];for(let i=0;i<3&&S.deck.length;i++)h.push(S.deck.pop());S.stockCount=S.deck.length;return h;}
-
-/* ---------- Seats on a semicircle (responsive) ---------- */
+/* =============== RENDERING (shared) =============== */
 function calcAngles(n){ if(n<=1)return[0]; if(n===2)return[-45,45]; if(n===3)return[-70,0,70];
   const start=-75,end=75,step=(end-start)/(n-1),arr=[];for(let i=0;i<n;i++)arr.push(start+i*step);return arr; }
 function placeSeat(div,deg){ const cx=50, cy=36, r=24; const rad=deg*Math.PI/180, x=cx + r*Math.sin(rad), y=cy - r*Math.cos(rad);
@@ -304,28 +294,24 @@ function renderSeats(){
   others.forEach((p,i)=>{
     const s=document.createElement("div");
     s.className=`seat ${S.turn===p.id?'active':''}`;
-    s.innerHTML=`<div class="pinfo"><div class="pname">${p.name}</div><div class="pscore">${p.score} pts</div></div>
-                 <div class="backs"><div class="back"></div><div class="back"></div><div class="back"></div></div>`;
+    const backs = (MODE==="net") ? (p.cardCount ?? 3) : 3;
+    s.innerHTML=`<div class="pinfo"><div class="pname">${p.name}${p.isHost?' 👑':''}</div><div class="pscore">${p.score||0} pts</div></div>
+                 <div class="backs">${Array(backs).fill(0).map(()=>'<div class="back"></div>').join('')}</div>`;
     placeSeat(s, ang[i]); $("seats").appendChild(s);
   });
 }
 window.addEventListener('resize', renderSeats);
 
-/* ---------- Rendering ---------- */
 function renderHand(){ const wrap=$("hand"); wrap.innerHTML=""; S.myHand.forEach((c,i)=>{const d=document.createElement("div"); d.className=`cardv ${isRed(c.suit)?'red':''} ${S.selected.includes(i)?'selected':''}`; d.textContent=label(c); d.onclick=()=>select(i); wrap.appendChild(d); }); }
-function renderScores(){ const list=$("scoreList"); list.innerHTML=""; const min=Math.min(...S.players.map(p=>p.score)); [...S.players].sort((a,b)=>a.score-b.score).forEach(p=>{const row=document.createElement("div"); row.className=`srow ${p.score===min?'lead':''}`; row.innerHTML=`<span>${p.name}</span><span>${p.score}</span>`; list.appendChild(row);});}
+function renderScores(){ const list=$("scoreList"); list.innerHTML=""; const min=Math.min(...S.players.map(p=>p.score||0)); [...S.players].sort((a,b)=>(a.score||0)-(b.score||0)).forEach(p=>{const row=document.createElement("div"); row.className=`srow ${p.score===min?'lead':''}`; row.innerHTML=`<span>${p.name}${p.isHost?' 👑':''}</span><span>${p.score||0}</span>`; list.appendChild(row);});}
 function renderPiles(){ $("stockCount").textContent=S.stockCount; $("immTop").textContent=S.immCards.length?S.immCards.map(label).join(" "):"—"; $("pastTop").textContent=S.pastTop?label(S.pastTop):"Empty"; const pastOK=S.turn===S.myId&&S.hasDiscarded&&!S.hasDrawn&&!!S.pastTop; $("pastPile").classList.toggle("clickable",pastOK); $("pastPile").classList.toggle("disabled",!pastOK); $("immPile").classList.toggle("disabled",true);}
 function renderInfo(){ $("infTurn").textContent=S.turn===S.myId?"Your Turn":`${(S.players.find(p=>p.id===S.turn)||{name:'—'}).name}'s Turn`; $("infRound").textContent=`Round ${S.round}`; }
-
-/* ---------- Selection & Buttons ---------- */
-function select(i){ if(S.turn!==S.myId||S.hasDiscarded) return; const k=S.selected.indexOf(i); if(k>-1) S.selected.splice(k,1); else{ if(S.selected.length){const r0=S.myHand[S.selected[0]].rank; if(S.myHand[i].rank!==r0) S.selected=[];} if(S.selected.length<3) S.selected.push(i);} renderHand(); updateButtons();}
-function validDiscard(){ if(!S.selected.length||S.selected.length>3) return false; const r0=S.myHand[S.selected[0]].rank; return S.selected.every(ix=>S.myHand[ix].rank===r0); }
 function updateButtons(){
   const myTurn=S.turn===S.myId;
-  $("btnDiscard").disabled = !(myTurn && !S.hasDiscarded && validDiscard());
+  $("btnDiscard").disabled=!(myTurn && !S.hasDiscarded && validDiscard());
   const canDraw=myTurn && S.hasDiscarded && !S.hasDrawn;
   $("btnDrawS").disabled=!canDraw; $("btnDrawP").disabled=!(canDraw && !!S.pastTop);
-  const canLakdi=myTurn && !S.hasDiscarded && S.myHand.length>=1 && !S.firstTurn; // block first turn
+  const canLakdi=myTurn && !S.hasDiscarded && S.myHand.length>=1 && !S.firstTurn;
   $("btnLakdi").disabled=!canLakdi;
   const hint=$("hint");
   if(!myTurn) hint.textContent="Waiting for other players…";
@@ -333,196 +319,190 @@ function updateButtons(){
   else if(!S.hasDrawn) hint.textContent = S.pastTop ? "Draw from Stock or Past." : "Draw from Stock.";
   else hint.textContent="";
   renderPiles();
+  // host-only Start button visibility
+  $("btnStart").classList.toggle("hidden", !(MODE==="net" && S.isHost && S.phase==="lobby"));
 }
 
-/* ---------- Timer ---------- */
+/* ---------- selection ---------- */
+function select(i){ if(S.turn!==S.myId||S.hasDiscarded) return; const k=S.selected.indexOf(i); if(k>-1) S.selected.splice(k,1); else{ if(S.selected.length){const r0=S.myHand[S.selected[0]].rank; if(S.myHand[i].rank!==r0) S.selected=[];} if(S.selected.length<3) S.selected.push(i);} renderHand(); updateButtons();}
+function validDiscard(){ if(!S.selected.length||S.selected.length>3) return false; const r0=S.myHand[S.selected[0]].rank; return S.selected.every(ix=>S.myHand[ix].rank===r0); }
+
+/* ---------- timer ---------- */
 function startTimer(){ stopTimer(); $("timer").classList.remove("hidden"); let t=30; $("tleft").textContent=t; S.timer=setInterval(()=>{t--; $("tleft").textContent=t; if(t<=0){stopTimer(); autoPlay();}},1000);}
 function stopTimer(){ if(S.timer){clearInterval(S.timer); S.timer=null; $("timer").classList.add("hidden");} }
-function autoPlay(){ if(!S.hasDiscarded && S.turn===S.myId){ if(S.myHand.length){ const hi=S.myHand.reduce((ix,c,i)=> v(c.rank)>v(S.myHand[ix].rank)?i:ix,0); S.selected=[hi]; doDiscard(); setTimeout(()=>{ if(!S.hasDrawn) drawStock(); }, 500);} } else if(!S.hasDrawn){ drawStock(); } }
-
-/* ---------- Actions ---------- */
-function doDiscard(){ if(!validDiscard()||S.hasDiscarded) return; const thrown=S.selected.map(ix=>S.myHand[ix]); S.selected.sort((a,b)=>b-a).forEach(ix=>S.myHand.splice(ix,1)); S.immCards=thrown.slice(); S.hasDiscarded=true; S.selected.length=0; renderHand(); updateButtons();}
-function drawStock(){ if(!(S.hasDiscarded && !S.hasDrawn)) return; if(S.deck.length){ S.myHand.push(S.deck.pop()); S.stockCount=S.deck.length; S.hasDrawn=true; renderHand(); updateButtons(); endTurn(); } }
-function drawPast(){ if(!(S.hasDiscarded && !S.hasDrawn && S.pastTop)) return; S.myHand.push(S.pastTop); S.pastTop=null; S.hasDrawn=true; renderHand(); updateButtons(); endTurn(); }
-function callLakdi(){ if(S.turn!==S.myId) return; if(S.hasDiscarded) return; if(S.firstTurn) return; if(S.myHand.length<1) return; doLakdi(S.myId); }
-
-/* ---------- Turn flow ---------- */
-function endTurn(){
-  const top=S.immCards.at(-1)||null; S.pastTop=top; S.immCards=[];
-  const ix=S.players.findIndex(p=>p.id===S.turn);
-  S.turn=S.players[(ix+1)%S.players.length].id;
-  S.firstTurn=false; S.hasDiscarded=false; S.hasDrawn=false;
-  stopTimer(); renderSeats(); renderInfo(); updateButtons();
-  if(S.turn===S.myId){ startTimer(); } else if(S.isSingle){ const ai=S.ais.find(a=>a.id===S.turn); if(ai) aiTurn(ai); }
+function autoPlay(){ if(MODE==="net"){ // delegate to server auto rules
+    if(!S.hasDiscarded){ // auto-discard highest
+      let hi=0; for(let i=1;i<S.myHand.length;i++) if(v(S.myHand[i].rank)>v(S.myHand[hi].rank)) hi=i;
+      const card=S.myHand[hi]; socket.emit("discard",{code:S.roomCode,cards:[card]});
+    }else if(!S.hasDrawn){ socket.emit("draw",{code:S.roomCode,source:"stock"}); }
+  }else{ // local demo fallback
+    if(!S.hasDiscarded && S.myHand.length){ const hi=S.myHand.reduce((ix,c,i)=> v(c.rank)>v(S.myHand[ix].rank)?i:ix,0); S.selected=[hi]; doDiscardLocal(); setTimeout(()=>{ if(!S.hasDrawn) drawStockLocal(); }, 500);} else if(!S.hasDrawn){ drawStockLocal(); } }
 }
 
-/* ---------- AI turn with first-turn Lakdi block ---------- */
-function aiTurn(ai){
-  setTimeout(()=>{
-    if(!S.firstTurn && ai.wantLakdi()){ doLakdi(ai.id); return; }
-    const choice=ai.chooseDiscard(); const thrown=choice.map(i=>ai.hand[i]);
-    choice.sort((a,b)=>b-a).forEach(ix=>ai.hand.splice(ix,1)); let aiImm=thrown.slice();
-    setTimeout(()=>{
-      const src=ai.chooseDraw(S.pastTop);
-      if(src==="past" && S.pastTop){ ai.hand.push(S.pastTop); S.pastTop=null; }
-      else if(S.deck.length){ ai.hand.push(S.deck.pop()); S.stockCount=S.deck.length; }
-      if(!S.firstTurn && ai.wantLakdi()){ doLakdi(ai.id); return; }
-      const top=aiImm.at(-1)||null; S.pastTop=top; aiImm=[];
-      const ix=S.players.findIndex(p=>p.id===S.turn);
-      S.turn=S.players[(ix+1)%S.players.length].id;
-      S.firstTurn=false; renderSeats(); renderInfo(); updateButtons();
-      if(S.turn===S.myId){ startTimer(); } else { const nxt=S.ais.find(a=>a.id===S.turn); if(nxt) aiTurn(nxt); }
-    },800);
-  },600);
-}
+/* =====================================================
+   ============  LOCAL (single-player/demo) ============
+   ===================================================== */
+function deck(n=1){const suits=["hearts","diamonds","clubs","spades"],ranks=["A","2","3","4","5","6","7","8","9","10","J","Q","K"];const d=[];for(let k=0;k<n;k++)for(const s of suits)for(const r of ranks)d.push({suit:s,rank:r});for(let i=d.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[d[i],d[j]]=[d[j],d[i]];}return d;}
+function deal3(){const h=[];for(let i=0;i<3&&S.deck.length;i++)h.push(S.deck.pop());S.stockCount=S.deck.length;return h;}
+function calcAnglesDemo(){}
 
-/* ---------- Lakdi / Cut logic (first cut priority) ---------- */
-function orderAfter(pid){ // returns player ids in order starting after pid
-  const idx=S.players.findIndex(p=>p.id===pid); const arr=[]; for(let i=1;i<S.players.length;i++){arr.push(S.players[(idx+i)%S.players.length].id);} return arr;
-}
+function doDiscardLocal(){ if(!validDiscard()||S.hasDiscarded) return; const thrown=S.selected.map(ix=>S.myHand[ix]); S.selected.sort((a,b)=>b-a).forEach(ix=>S.myHand.splice(ix,1)); S.immCards=thrown.slice(); S.hasDiscarded=true; S.selected.length=0; renderHand(); updateButtons();}
+function drawStockLocal(){ if(!(S.hasDiscarded && !S.hasDrawn)) return; if(S.deck.length){ S.myHand.push(S.deck.pop()); S.stockCount=S.deck.length; S.hasDrawn=true; renderHand(); updateButtons(); endTurnLocal(); } }
+function drawPastLocal(){ if(!(S.hasDiscarded && !S.hasDrawn && S.pastTop)) return; S.myHand.push(S.pastTop); S.pastTop=null; S.hasDrawn=true; renderHand(); updateButtons(); endTurnLocal(); }
+function callLakdiLocal(){ if(S.turn!==S.myId||S.hasDiscarded||S.firstTurn||S.myHand.length<1) return; doLakdiLocal(S.myId); }
 
-function doLakdi(callerId){
-  stopTimer();
+function endTurnLocal(){ const top=S.immCards.at(-1)||null; S.pastTop=top; S.immCards=[]; const ix=S.players.findIndex(p=>p.id===S.turn); S.turn=S.players[(ix+1)%S.players.length].id; S.firstTurn=false; S.hasDiscarded=false; S.hasDrawn=false; stopTimer(); renderSeats(); renderInfo(); updateButtons(); if(S.turn===S.myId){ startTimer(); } else if(S.isSingle){ const ai=S.ais.find(a=>a.id===S.turn); if(ai) aiTurn(ai); } }
+function aiTurn(ai){ setTimeout(()=>{ if(!S.firstTurn && ai.wantLakdi()){ doLakdiLocal(ai.id); return; } const choice=ai.chooseDiscard(); const thrown=choice.map(i=>ai.hand[i]); choice.sort((a,b)=>b-a).forEach(ix=>ai.hand.splice(ix,1)); let aiImm=thrown.slice(); setTimeout(()=>{ const src=ai.chooseDraw(S.pastTop); if(src==="past"&&S.pastTop){ ai.hand.push(S.pastTop); S.pastTop=null; } else if(S.deck.length){ ai.hand.push(S.deck.pop()); S.stockCount=S.deck.length; } if(!S.firstTurn && ai.wantLakdi()){ doLakdiLocal(ai.id); return; } const top=aiImm.at(-1)||null; S.pastTop=top; aiImm=[]; const ix=S.players.findIndex(p=>p.id===S.turn); S.turn=S.players[(ix+1)%S.players.length].id; S.firstTurn=false; renderSeats(); renderInfo(); updateButtons(); if(S.turn===S.myId){ startTimer(); } else { const nxt=S.ais.find(a=>a.id===S.turn); if(nxt) aiTurn(nxt); } },800); },600); }
+function orderAfter(pid){ const idx=S.players.findIndex(p=>p.id===pid); const arr=[]; for(let i=1;i<S.players.length;i++){arr.push(S.players[(idx+i)%S.players.length].id);} return arr; }
+function doLakdiLocal(callerId){ stopTimer(); const hands={}; hands[S.myId]=[...S.myHand]; if(S.isSingle) S.ais.forEach(ai=>hands[ai.id]=[...ai.hand]); const totals={}; S.players.forEach(p=> totals[p.id]=sum(hands[p.id]||[])); if(callerId===S.myId){ let winnerId=S.players[0].id, best=Infinity; S.players.forEach(p=>{const t=totals[p.id]??1e9; if(t<best){best=t; winnerId=p.id;}}); const penalties={}; if(winnerId!==callerId) penalties[callerId]=50; finalizeRoundLocal(winnerId,hands,totals,penalties); return; } const callerTotal = totals[callerId] ?? 1e9; const queue = orderAfter(callerId); for(const pid of queue){ if(pid===S.myId) break; const ai = S.ais.find(a=>a.id===pid); if(!ai) continue; const t = totals[pid] ?? sum(hands[pid]||[]); if(t < callerTotal){ finalizeRoundLocal(pid, hands, totals, {}); return; } } if(queue.includes(S.myId)){ const decl=S.players.find(p=>p.id===callerId); $("declName").textContent = decl?decl.name:"Opponent"; $("declCards").innerHTML = (hands[callerId]||[]).map(c=>`<div class="mini ${isRed(c.suit)?'red':''}">${label(c)}</div>`).join(""); PENDING={callerId,hands,totals,callerTotal}; $("challenge").classList.remove("hidden"); return; } let winnerId=S.players[0].id,best=Infinity; S.players.forEach(p=>{const t=totals[p.id]??1e9; if(t<best){best=t; winnerId=p.id;}}); const penalties={}; if(winnerId!==callerId) penalties[callerId]=50; finalizeRoundLocal(winnerId,hands,totals,penalties); }
+$("btnCut").onclick=()=>resolveCutLocal(true); $("btnLet").onclick=()=>resolveCutLocal(false);
+function resolveCutLocal(doCut){ if(!PENDING){$("challenge").classList.add("hidden");return;} const {callerId,hands,totals,callerTotal}=PENDING; PENDING=null; $("challenge").classList.add("hidden"); if(!doCut){ let win=S.players[0].id,best=Infinity; S.players.forEach(p=>{const t=totals[p.id]??1e9; if(t<best){best=t; win=p.id;}}); const pen={}; if(win!==callerId) pen[callerId]=50; finalizeRoundLocal(win,hands,totals,pen); return; } const myT = totals[S.myId] ?? sum(hands[S.myId]||[]); if(myT < callerTotal){ finalizeRoundLocal(S.myId, hands, totals, {}); } else { finalizeRoundLocal(callerId, hands, totals, {[S.myId]:50}); } }
+function finalizeRoundLocal(winnerId,hands,totals,penalties){ const grid=$("handsGrid"); grid.innerHTML=""; S.players.forEach(p=>{ let add; if(p.id===winnerId) add=0; else if(penalties[p.id]===50) add=50; else add=totals[p.id]||0; p.score=(p.score||0)+add; const box=document.createElement("div"); const h=hands[p.id]||[]; box.className=`hbox ${p.id===winnerId?'win':''} ${penalties[p.id]===50?'pen':''}`; const cards=h.map(c=>`<div class="mini ${isRed(c.suit)?'red':''}">${label(c)}</div>`).join(''); box.innerHTML = `<div class="pname" style="margin-bottom:6px">${p.name}</div><div style="display:flex;flex-wrap:wrap">${cards}</div><div>Total: ${add}${penalties[p.id]===50?' (flat penalty)':''}</div>${p.id===winnerId?'<div style="color:#2ecc71;font-weight:900">Winner!</div>':''}`; grid.appendChild(box); }); $("cut").classList.remove("hidden"); }
+$("btnNext").onclick=()=>{ $("cut").classList.add("hidden"); renderScores(); const max=Math.max(...S.players.map(p=>p.score||0)); if(max>=S.endThreshold){ showOver(); return; } S.round++; S.firstTurn=true; S.selected.length=0; S.deck = deck(Math.ceil(S.players.length/6)); S.myHand = deal3(); if(S.isSingle) S.ais.forEach(ai=> ai.hand=deal3()); S.stockCount=S.deck.length; S.pastTop = S.deck.length ? S.deck.pop() : null; S.stockCount=S.deck.length; S.immCards=[]; S.hasDiscarded=false; S.hasDrawn=false; S.turn = S.players[0].id; renderSeats(); renderHand(); renderPiles(); renderInfo(); updateButtons(); if(S.turn===S.myId) startTimer(); else if(S.isSingle){ const ai=S.ais.find(a=>a.id===S.turn); if(ai) aiTurn(ai); } };
+function showOver(){ const box=$("finalRes"), ordered=[...S.players].sort((a,b)=>(a.score||0)-(b.score||0)); box.innerHTML = ordered.map((p,i)=>`<div class="srow ${i===0?'lead':''}" style="margin:6px 0"><span>${i+1}. ${p.name}</span><span>${p.score||0} pts</span></div>`).join(''); $("over").classList.remove("hidden"); }
+$("btnNew").onclick=()=>{ if(S.timer){clearInterval(S.timer);S.timer=null;} Object.assign(S,{players:[],myId:null,myName:null,roomCode:null,myHand:[],selected:[],turn:null,round:1,deck:[],stockCount:0,pastTop:null,immCards:[],firstTurn:true,hasDiscarded:false,hasDrawn:false,isSingle:false,ais:[], phase:"lobby", isHost:false}); $("over").classList.add("hidden"); $("game").classList.add("hidden"); $("login").classList.remove("hidden"); $("name").value=""; $("room").value=""; $("lmsg").textContent=""; $("name").focus(); };
 
-  // snapshot hands & totals
-  const hands={};
-  hands[S.myId]=[...S.myHand];
-  if(S.isSingle) S.ais.forEach(ai=>hands[ai.id]=[...ai.hand]);
-  else S.players.filter(p=>p.id!==S.myId).forEach(p=>{
-    // demo-only fallback hands
-    hands[p.id]=hands[p.id]||[{rank:"2",suit:"clubs"},{rank:"3",suit:"hearts"},{rank:"4",suit:"spades"}];
-  });
-  const totals={}; S.players.forEach(p=> totals[p.id]=sum(hands[p.id]||[]));
-
-  // If I declared: validate against lowest total; if not lowest → flat +50 on me.
-  if(callerId===S.myId){
-    let winnerId=S.players[0].id, best=Infinity;
-    S.players.forEach(p=>{const t=totals[p.id]??1e9; if(t<best){best=t; winnerId=p.id;}});
-    const penalties={}; if(winnerId!==callerId) penalties[callerId]=50;
-    finalizeRound(winnerId,hands,totals,penalties); return;
+/* =====================================================
+   ===============  SERVER (multiplayer)  ===============
+   ===================================================== */
+function joinGameUI(){ $("login").classList.add("hidden"); $("game").classList.remove("hidden"); renderSeats(); renderScores(); renderHand(); renderPiles(); renderInfo(); updateButtons(); if(S.turn===S.myId) startTimer(); }
+function computePastStart(prev,now){
+  // Try server field first
+  if(now.pastDiscardTop) return now.pastDiscardTop;
+  // If my turn just started, freeze previous discard (from prev snapshot if available)
+  if(prev && prev.currentTurn !== now.currentTurn && now.currentTurn === S.myId){
+    return prev.pastDiscardTop || prev.discardTop || prev.discard?.at?.(-1) || now.initialDiscard || null;
   }
+  // Otherwise keep what server sent last time
+  return S.pastTop || now.initialDiscard || null;
+}
 
-  // Someone else declared: first-cut priority in turn order after caller
-  const callerTotal = totals[callerId] ?? 1e9;
-  const queue = orderAfter(callerId);
+/* Room state from server */
+if(socket){
+  socket.on("connect",()=>lobbyMsg("Connected."));
+  socket.on("connect_error",()=>lobbyMsg("Disconnected. You can still play vs Computer.", "error"));
 
-  // check AIs before showing human (first that qualifies cuts immediately)
-  for(const pid of queue){
-    if(pid===S.myId) break; // stop before human; give them the modal
-    const ai = S.ais.find(a=>a.id===pid);
-    if(!ai) continue;
-    const t = totals[pid] ?? sum(hands[pid]||[]);
-    if(t < callerTotal){
-      // AI cuts first → AI wins immediately
-      finalizeRound(pid, hands, totals, {}); 
-      return;
+  socket.on("room_state",(st)=>{
+    // track identity
+    S.myId = st.me?.id || S.myId || socket.id;
+    S.myName = st.me?.name || S.myName;
+    S.roomCode = st.code || st.roomCode || S.roomCode;
+
+    // basic phase/host
+    S.phase = st.phase || S.phase || "lobby";
+    // host detection from players array (isHost true on host) or hostId on payload
+    const hostId = st.hostId || (st.players||[]).find(p=>p.isHost)?.id;
+    S.isHost = (S.myId && hostId) ? (S.myId===hostId) : !!((st.players||[]).find(p=>p.id===S.myId && p.isHost));
+
+    // players
+    S.players = (st.players||[]).map(p=>({
+      id:p.id, name:p.name, score:p.score||0, isHost: !!(p.isHost || hostId===p.id),
+      cardCount: st.cardCounts ? st.cardCounts[p.id] : undefined
+    }));
+
+    // my hand if included
+    if(st.hands && st.hands[S.myId]) S.myHand = st.hands[S.myId];
+
+    // turn & round & stock
+    S.turn = st.currentTurn || st.turn || S.turn;
+    S.round = st.round || S.round;
+    S.stockCount = (typeof st.stockCount==="number") ? st.stockCount : (st.stock?st.stock.length: S.stockCount);
+
+    // freeze past
+    S.pastTop = computePastStart(LAST_STATE, st);
+
+    // per-turn flags
+    if(!LAST_STATE || LAST_STATE.currentTurn !== st.currentTurn){
+      if(S.turn===S.myId){
+        S.hasDiscarded=false; S.hasDrawn=false; S.selected.length=0; S.immCards=[];
+        startTimer();
+      }else{
+        stopTimer(); S.selected.length=0; S.immCards=[];
+      }
     }
-  }
 
-  // If human is next in queue, show the challenge modal
-  if(queue.includes(S.myId)){
-    const decl=S.players.find(p=>p.id===callerId);
-    $("declName").textContent = decl?decl.name:"Opponent";
-    $("declCards").innerHTML = (hands[callerId]||[]).map(c=>`<div class="mini ${isRed(c.suit)?'red':''}">${label(c)}</div>`).join("");
-    PENDING={callerId,hands,totals,callerTotal};
-    $("challenge").classList.remove("hidden");
-    return;
-  }
+    LAST_STATE = st;
 
-  // No one cut (no human, or everyone after caller had >= total) → let it stand
-  // Normal rule: lowest total wins; if caller not lowest → invalid Lakdi +50 on caller
-  let winnerId=S.players[0].id,best=Infinity;
-  S.players.forEach(p=>{const t=totals[p.id]??1e9; if(t<best){best=t; winnerId=p.id;}});
-  const penalties={}; if(winnerId!==callerId) penalties[callerId]=50;
-  finalizeRound(winnerId,hands,totals,penalties);
-}
-
-// Cut modal handlers
-$("btnCut").onclick=()=>resolveCut(true);
-$("btnLet").onclick=()=>resolveCut(false);
-
-function resolveCut(doCut){
-  if(!PENDING){$("challenge").classList.add("hidden");return;}
-  const {callerId,hands,totals,callerTotal}=PENDING; PENDING=null; $("challenge").classList.add("hidden");
-
-  if(!doCut){
-    // Stand: lowest wins; invalid Lakdi gives flat 50 to caller if not lowest
-    let win=S.players[0].id,best=Infinity;
-    S.players.forEach(p=>{const t=totals[p.id]??1e9; if(t<best){best=t; win=p.id;}});
-    const pen={}; if(win!==callerId) pen[callerId]=50;
-    finalizeRound(win,hands,totals,pen); return;
-  }
-
-  // Player called cut: valid only if my total < caller total; else flat +50 on me
-  const myT = totals[S.myId] ?? sum(hands[S.myId]||[]);
-  if(myT < callerTotal){
-    finalizeRound(S.myId, hands, totals, {});           // I win
-  }else{
-    finalizeRound(callerId, hands, totals, {[S.myId]:50}); // invalid cut → +50 on me; declare stands as winner OR lowest?
-    // When cut fails, spec says "person who declared lakdi loses" only if cut valid,
-    // so declarer keeps standing; but winner should still be the lowest overall.
-    // We chose declarer as winner for immediate feel; if you prefer pure lowest, change above:
-    // let win=S.players.reduce((w,p)=> (totals[p.id]<totals[w.id]?p:w),S.players[0]).id;
-    // finalizeRound(win, hands, totals, {[S.myId]:50});
-  }
-}
-
-/* ---------- Common finalize & modals ---------- */
-function finalizeRound(winnerId,hands,totals,penalties){
-  const grid=$("handsGrid"); grid.innerHTML="";
-  S.players.forEach(p=>{
-    let add;
-    if(p.id===winnerId) add=0;
-    else if(penalties[p.id]===50) add=50;        // flat invalid penalty
-    else add=totals[p.id]||0;
-
-    p.score += add;
-
-    const box=document.createElement("div");
-    const h=hands[p.id]||[];
-    box.className=`hbox ${p.id===winnerId?'win':''} ${penalties[p.id]===50?'pen':''}`;
-    const cards=h.map(c=>`<div class="mini ${isRed(c.suit)?'red':''}">${label(c)}</div>`).join('');
-    box.innerHTML = `
-      <div class="pname" style="margin-bottom:6px">${p.name}</div>
-      <div style="display:flex;flex-wrap:wrap">${cards}</div>
-      <div>Total: ${add}${penalties[p.id]===50?' (flat penalty)':''}</div>
-      ${p.id===winnerId?'<div style="color:#2ecc71;font-weight:900">Winner!</div>':''}
-    `;
-    grid.appendChild(box);
+    // UI
+    joinGameUI();
+    updateButtons(); // also toggles Start button
   });
-  $("cut").classList.remove("hidden");
+
+  // optional server summary (legacy)
+  socket.on("showdown_summary",(msg)=>{
+    stopTimer();
+    const grid=$("handsGrid"); grid.innerHTML="";
+    const winner = msg.results?.winner;
+    const penalties = msg.results?.penalties || {};
+    (msg.players || S.players).forEach(p=>{
+      const hand=(msg.hands && msg.hands[p.id]) ? msg.hands[p.id] : [];
+      const total = (p.id===winner) ? 0 : (sum(hand) + (penalties[p.id]===50?50:0));
+      const box=document.createElement("div");
+      box.className=`hbox ${p.id===winner?'win':''} ${penalties[p.id]===50?'pen':''}`;
+      const cards=hand.map(c=>`<div class="mini ${isRed(c.suit)?'red':''}">${label(c)}</div>`).join('');
+      box.innerHTML=`<div class="pname" style="margin-bottom:6px">${p.name}</div>
+                     <div style="display:flex;flex-wrap:wrap">${cards}</div>
+                     <div>Total: ${total}${penalties[p.id]===50?' (flat penalty)':''}</div>
+                     ${p.id===winner?'<div style="color:#2ecc71;font-weight:900">Winner!</div>':''}`;
+      grid.appendChild(box);
+    });
+    $("cut").classList.remove("hidden");
+  });
 }
 
-$("btnNext").onclick=()=>{
-  $("cut").classList.add("hidden"); renderScores();
-  const max=Math.max(...S.players.map(p=>p.score)); if(max>=S.endThreshold){ showOver(); return; }
-  S.round++; S.firstTurn=true; S.selected.length=0;
-  S.deck = deck(Math.ceil(S.players.length/6));
-  S.myHand = deal3(); if(S.isSingle) S.ais.forEach(ai=> ai.hand=deal3());
-  S.stockCount=S.deck.length;
-  S.pastTop = S.deck.length ? S.deck.pop() : null; S.stockCount=S.deck.length;
-  S.immCards=[]; S.hasDiscarded=false; S.hasDrawn=false;
-  S.turn = S.players[0].id;
-  renderSeats(); renderHand(); renderPiles(); renderInfo(); updateButtons();
-  if(S.turn===S.myId) startTimer(); else if(S.isSingle){ const ai=S.ais.find(a=>a.id===S.turn); if(ai) aiTurn(ai); }
+/* ---------- Multiplayer actions ---------- */
+function discardNet(){ if(!validDiscard()||S.hasDiscarded||MODE!=="net") return;
+  const cards=S.selected.map(ix=>S.myHand[ix]); socket.emit("discard",{code:S.roomCode,cards}); S.immCards=cards.slice(); S.hasDiscarded=true; S.selected.length=0; updateButtons(); }
+function drawStockNet(){ if(!(S.hasDiscarded && !S.hasDrawn) || MODE!=="net") return; socket.emit("draw",{code:S.roomCode,source:"stock"}); S.hasDrawn=true; updateButtons(); }
+function drawPastNet(){ if(!(S.hasDiscarded && !S.hasDrawn && S.pastTop) || MODE!=="net") return; socket.emit("draw",{code:S.roomCode,source:"past"}); S.hasDrawn=true; updateButtons(); }
+function callLakdiNet(){ if(MODE!=="net"||S.firstTurn||S.hasDiscarded||S.turn!==S.myId) return; socket.emit("call_lakdi",{code:S.roomCode}); }
+
+/* ---------- Buttons (dispatch per mode) ---------- */
+$("btnDiscard").onclick = ()=> MODE==="net" ? discardNet() : doDiscardLocal();
+$("btnDrawS").onclick   = ()=> MODE==="net" ? drawStockNet() : drawStockLocal();
+$("btnDrawP").onclick   = ()=> MODE==="net" ? drawPastNet()  : drawPastLocal();
+$("btnLakdi").onclick   = ()=> MODE==="net" ? callLakdiNet() : callLakdiLocal();
+
+/* ---------- Next round (net) ---------- */
+$("btnNext").addEventListener("click", ()=>{
+  if(MODE==="net"){ $("cut").classList.add("hidden"); socket.emit("next_round",{code:S.roomCode}); }
+});
+
+/* ---------- Start game (host only) ---------- */
+$("btnStart").addEventListener("click", ()=>{
+  if(!(MODE==="net" && S.isHost && S.phase==="lobby")) return;
+  socket.emit("start_game",{code:S.roomCode});
+});
+
+/* ---------- Lobby bindings ---------- */
+$("room").addEventListener("input", e => e.target.value=(e.target.value||"").toUpperCase());
+$("btnCPU").onclick = startSingle;
+$("btnCreate").onclick = () => {
+  const name = ($("name").value||"").trim() || "Player";
+  if(!socket){ lobbyMsg("Socket not available. Use Play vs Computer.", "error"); return; }
+  lobbyMsg("Creating room…");
+  socket.emit("create_room",{name},(res)=>{
+    if(!res||res.error){ lobbyMsg(res?.error||"Create failed.", "error"); return; }
+    MODE="net"; S.myName=name; S.roomCode=res.code; lobbyMsg(`Room ${res.code} created. Waiting for state…`);
+  });
+};
+$("btnJoin").onclick = () => {
+  const name = ($("name").value||"").trim() || "Player";
+  const code = ($("room").value||"").trim().toUpperCase();
+  if(!code || code.length<3){ lobbyMsg("Enter a valid room code.", "error"); return; }
+  if(!socket){ lobbyMsg("Socket not available. Use Play vs Computer.", "error"); return; }
+  lobbyMsg(`Joining ${code}…`);
+  socket.emit("join_room",{name,code},(res)=>{
+    if(!res||res.error){ lobbyMsg(res?.error||"Join failed.", "error"); return; }
+    MODE="net"; S.myName=name; S.roomCode=code; lobbyMsg(`Joined ${code}. Waiting for state…`);
+  });
 };
 
-function showOver(){
-  const box=$("finalRes"), ordered=[...S.players].sort((a,b)=>a.score-b.score);
-  box.innerHTML = ordered.map((p,i)=>`<div class="srow ${i===0?'lead':''}" style="margin:6px 0"><span>${i+1}. ${p.name}</span><span>${p.score} pts</span></div>`).join('');
-  $("over").classList.remove("hidden");
-}
-$("btnNew").onclick=()=>{
-  if(S.timer){clearInterval(S.timer);S.timer=null;}
-  Object.assign(S,{players:[],myHand:[],selected:[],turn:null,round:1,deck:[],stockCount:0,pastTop:null,immCards:[],firstTurn:true,hasDiscarded:false,hasDrawn:false,isSingle:false,ais:[]});
-  $("over").classList.add("hidden"); $("game").classList.add("hidden"); $("login").classList.remove("hidden");
-  $("name").value=""; $("room").value=""; $("lmsg").textContent=""; $("name").focus();
-};
-
-/* ---------- Entry ---------- */
+/* ---------- Single player / demo starters ---------- */
 function startSingle(){
+  MODE="demo";
   let name=($("name").value||"").trim(); if(!name) name="Player";
-  S.isSingle=true; S.players=[{id:S.myId,name,score:0}];
+  S.isSingle=true; S.players=[{id:"me",name,score:0}]; S.myId="me";
   S.ais=[new AI("ai1","Alice (Easy)","easy"), new AI("ai2","Bob (Medium)","medium"), new AI("ai3","Charlie (Hard)","hard")];
   S.ais.forEach(ai=>S.players.push({id:ai.id,name:ai.name,score:0}));
 
@@ -536,33 +516,81 @@ function startSingle(){
   $("login").classList.add("hidden"); $("game").classList.remove("hidden");
   renderSeats(); renderScores(); renderHand(); renderPiles(); renderInfo(); updateButtons(); startTimer();
 }
-function startDemo(){
-  let name=($("name").value||"").trim(); if(!name) name="Player";
-  $("lmsg").textContent="Starting demo (local)…"; $("lmsg").className="msg status";
-  S.isSingle=false; S.players=[{id:S.myId,name,score:0},{id:"p2",name:"Demo Player 2",score:0},{id:"p3",name:"Demo Player 3",score:0}];
-  S.deck=deck(1); S.myHand=deal3(); S.stockCount=S.deck.length;
-  S.pastTop=S.deck.length?S.deck.pop():null; S.stockCount=S.deck.length;
-  S.turn=S.myId; S.firstTurn=true; S.hasDiscarded=false; S.hasDrawn=false;
-  setTimeout(()=>{ $("login").classList.add("hidden"); $("game").classList.remove("hidden");
-    renderSeats(); renderScores(); renderHand(); renderPiles(); renderInfo(); updateButtons(); startTimer(); },250);
-}
 
-/* Wire-up */
-$("btnCPU").onclick=startSingle; $("btnDemo").onclick=startDemo;
-$("btnDiscard").onclick=doDiscard; $("btnDrawS").onclick=drawStock; $("btnDrawP").onclick=drawPast; $("btnLakdi").onclick=callLakdi;
-$("stockPile").onclick=()=>{ if(!$("btnDrawS").disabled) drawStock(); };
-$("pastPile").onclick =()=>{ if(!$("btnDrawP").disabled) drawPast(); };
-
+/* ---------- Quick UI hooks ---------- */
+$("stockPile").onclick=()=>{ if(!$("btnDrawS").disabled) (MODE==="net"?drawStockNet():drawStockLocal)(); };
+$("pastPile").onclick =()=>{ if(!$("btnDrawP").disabled) (MODE==="net"?drawPastNet():drawPastLocal)(); };
 document.addEventListener("keydown",(e)=>{
   if($("game").classList.contains("hidden")) return;
   if(S.turn!==S.myId) return;
   if(e.key==="1"||e.key==="2"||e.key==="3"){ const ix=parseInt(e.key,10)-1; if(ix<S.myHand.length && !S.hasDiscarded) select(ix); }
-  else if((e.key==="d"||e.key==="D") && !$("btnDiscard").disabled) doDiscard();
-  else if((e.key==="s"||e.key==="S") && !$("btnDrawS").disabled) drawStock();
-  else if((e.key==="f"||e.key==="F") && !$("btnDrawP").disabled) drawPast();
-  else if((e.key==="l"||e.key==="L") && !$("btnLakdi").disabled) callLakdi();
+  else if((e.key==="d"||e.key==="D") && !$("btnDiscard").disabled) (MODE==="net"?discardNet():doDiscardLocal)();
+  else if((e.key==="s"||e.key==="S") && !$("btnDrawS").disabled) (MODE==="net"?drawStockNet():drawStockLocal)();
+  else if((e.key==="f"||e.key==="F") && !$("btnDrawP").disabled) (MODE==="net"?drawPastNet():drawPastLocal)();
+  else if((e.key==="l"||e.key==="L") && !$("btnLakdi").disabled) (MODE==="net"?callLakdiNet():callLakdiLocal)();
 });
-document.addEventListener("DOMContentLoaded",()=>{ $("name").focus(); $("room").addEventListener("input",(e)=> e.target.value=(e.target.value||"").toUpperCase()); });
+document.addEventListener("DOMContentLoaded",()=>$("name").focus());
+
+/* ----- Optional server push channels you had at the end ----- */
+if(socket){
+  socket.on("discard_update",(msg)=>{
+    S.immCards = msg.cards;
+    S.turn = msg.nextTurn;
+    S.pastTop = msg.newPastTop;
+    S.hasDiscarded=false; S.hasDrawn=false;
+    renderSeats(); renderPiles(); renderInfo(); updateButtons();
+  });
+
+  socket.on("draw_update",(msg)=>{
+    S.turn = msg.nextTurn;
+    S.pastTop = msg.newPastTop;
+    S.stockCount = msg.stockCount;
+    S.hasDiscarded=false; S.hasDrawn=false;
+    renderSeats(); renderPiles(); renderInfo(); updateButtons();
+  });
+
+  socket.on("lakdi_called",(msg)=>{
+    $("declName").textContent = msg.byName;
+    $("declCards").innerHTML = msg.cards.map(c =>
+      `<div class="mini ${isRed(c.suit)?'red':''}">${label(c)}</div>`
+    ).join("");
+    $("challenge").classList.remove("hidden");
+    PENDING = msg;
+  });
+
+  socket.on("round_result",(msg)=>{
+    stopTimer();
+    const grid=$("handsGrid"); grid.innerHTML="";
+    msg.players.forEach(p=>{
+      const h = msg.hands[p.id] || [];
+      const box=document.createElement("div");
+      box.className=`hbox ${p.id===msg.winner?'win':''}`;
+      box.innerHTML=`<div class="pname">${p.name}</div>
+                     <div style="display:flex;flex-wrap:wrap">
+                       ${h.map(c=>`<div class="mini ${isRed(c.suit)?'red':''}">${label(c)}</div>`).join("")}
+                     </div>
+                     <div>Total: ${msg.totals[p.id]}</div>`;
+      grid.appendChild(box);
+    });
+    $("cut").classList.remove("hidden");
+  });
+
+  socket.on("next_round_state",(st)=>{
+    LAST_STATE=null;
+    Object.assign(S,{
+      myHand: st.hands[S.myId],
+      turn: st.currentTurn,
+      round: st.round,
+      stockCount: st.stockCount,
+      pastTop: st.pastDiscardTop,
+      immCards: [],
+      hasDiscarded:false, hasDrawn:false,
+      phase: st.phase || "playing"
+    });
+    renderSeats(); renderHand(); renderPiles(); renderInfo(); updateButtons();
+    if(S.turn===S.myId) startTimer();
+  });
+}
 </script>
 </body>
 </html>

@@ -1,56 +1,72 @@
-// server/server.js
-// Node + Express + Socket.IO Lakdi server
-// - Rooms with create/join
-// - Start game, turns, discard/draw
-// - Lakdi with first-cut priority (flat +50 invalid)
+// server/server.js (ESM)
+// Express + Socket.IO Lakdi server (ESM version)
+// - Serves ../client/index.html
+// - Rooms, start, discard/draw
+// - Lakdi with first-cut priority and flat +50 invalid cut
 // - Round results, next round, game over threshold
+// - CORS for GitHub Pages + Render origin
 
-const path = require("path");
-const fs = require("fs");
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-const crypto = require("crypto");
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+import express from "express";
+import http from "http";
+import { Server } from "socket.io";
+import cors from "cors";
+import crypto from "crypto";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const APP_ORIGINS = [
+  "https://manty98.github.io",     // your GitHub Pages
+  "https://lakdi.onrender.com",    // your Render domain
+  "http://localhost:3000",         // local frontend (optional)
+  "http://127.0.0.1:3000"          // local frontend (optional)
+];
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] },
-});
 
-/* ---------- Serve client from ../client (robust) ---------- */
-const candidates = [
-  path.join(__dirname, "../client"),    // Root Directory = server
-  path.join(process.cwd(), "client"),   // Root Directory = repo root
-  path.join(__dirname, "../../client"), // safety
+// CORS for HTTP routes
+app.use(cors({ origin: APP_ORIGINS, credentials: true }));
+
+/* ---------- Serve client from ../client (robust lookup) ---------- */
+const cand = [
+  path.join(__dirname, "../client"),
+  path.join(process.cwd(), "client"),
+  path.join(__dirname, "../../client")
 ];
 let CLIENT_DIR = null;
-for (const p of candidates) {
+for (const p of cand) {
   if (fs.existsSync(path.join(p, "index.html"))) { CLIENT_DIR = p; break; }
 }
 if (!CLIENT_DIR) {
   console.error("[Lakdi] FATAL: client/index.html not found. Checked:");
-  candidates.forEach(p => console.error(" -", p));
+  cand.forEach(p => console.error(" -", p));
   process.exit(1);
 }
 console.log("[Lakdi] Serving client from:", CLIENT_DIR);
 
 app.use(express.static(CLIENT_DIR));
 app.get("/", (_req, res) => res.sendFile(path.join(CLIENT_DIR, "index.html")));
-app.get("/health", (_req, res) => res.send("ok"));
-// SPA fallback (avoid catching socket.io path)
+app.get("/health", (_req, res) => res.send("OK"));
+// SPA fallback (don’t swallow Socket.IO paths)
 app.get("*", (req, res, next) => {
   if (req.path.startsWith("/socket.io")) return next();
   res.sendFile(path.join(CLIENT_DIR, "index.html"));
 });
 
+/* ---------- HTTP server + Socket.IO (CORS) ---------- */
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: APP_ORIGINS, methods: ["GET","POST"], credentials: true }
+});
+
 /* --------- Helpers --------- */
 const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
 const SUITS = ["hearts","diamonds","clubs","spades"];
-const sym = {hearts:"♥",diamonds:"♦",clubs:"♣",spades:"♠"};
 const v = r => r==="A"?1:r==="J"?11:r==="Q"?12:r==="K"?13:parseInt(r,10);
 const sum = hand => hand.reduce((a,c)=>a+v(c.rank),0);
-const label = c => `${c.rank}${sym[c.suit]}`;
 const deck = (n=1) => {
   const d=[];
   for(let k=0;k<n;k++) for(const s of SUITS) for(const r of RANKS) d.push({suit:s,rank:r});
@@ -65,7 +81,7 @@ function visibleState(room) {
     phase: room.phase,
     round: room.round,
     turn: room.turn,
-    currentTurn: room.turn,       // alias for clients that expect currentTurn
+    currentTurn: room.turn,      // alias for clients that expect currentTurn
     pastTop: room.pastTop || null,
     stockCount: room.deck.length,
     firstTurn: room.firstTurn,
@@ -88,11 +104,6 @@ function nextPlayer(room, pid) {
   const idx = room.players.findIndex(p => p.id===pid);
   return room.players[(idx+1)%room.players.length].id;
 }
-function playersAfter(room, pid) {
-  const arr=[]; let cur = pid;
-  for(let i=1;i<room.players.length;i++){ cur = nextPlayer(room, cur); arr.push(cur); }
-  return arr;
-}
 
 function startGame(room) {
   room.phase = "playing";
@@ -104,9 +115,7 @@ function startGame(room) {
   room.turn = room.host;
   room.firstTurn = true;
   io.in(room.code).emit("room_state", visibleState(room));
-  room.players.forEach(p => {
-    io.to(p.socketId).emit("your_hand", room.hands[p.id]);
-  });
+  room.players.forEach(p => io.to(p.socketId).emit("your_hand", room.hands[p.id]));
 }
 
 function startNextRound(room) {
@@ -206,7 +215,7 @@ io.on("connection", (socket) => {
   socket.on("draw", ({code, source}, ack) => {
     const room = rooms.get(code); if(!room||room.turn!==socket.id) return;
     const hand = room.hands[socket.id] || [];
-    // accept "past" or "discard" for drawing from past pile; anything else -> stock
+    // accept "past" or "discard" for drawing from past pile; else draw stock
     if(source==="past" || source==="discard"){
       if(!room.pastTop) return;
       hand.push(room.pastTop);
@@ -223,7 +232,6 @@ io.on("connection", (socket) => {
 
   socket.on("call_lakdi", ({code}) => {
     const room = rooms.get(code); if(!room) return;
-    // Open a pending cut sequence
     const callerId = socket.id;
     const hands = room.hands;
     room.pendingCut = {
@@ -232,7 +240,7 @@ io.on("connection", (socket) => {
       handsSnapshot: JSON.parse(JSON.stringify(hands))
     };
 
-    // Broadcast declaration (clients implement first-cut priority UX)
+    // Notify all players; clients implement first-cut UI priority
     io.in(code).emit("lakdi_declared", {
       callerId,
       callerName: (room.players.find(p=>p.id===callerId)||{}).name,
@@ -246,7 +254,6 @@ io.on("connection", (socket) => {
     if(pend.resolved) return;
     const callerId = pend.callerId;
 
-    // First valid "cut" resolves immediately
     if(action==="cut"){
       pend.resolved = true;
       const hands = room.hands;
@@ -271,7 +278,6 @@ io.on("connection", (socket) => {
         else p.score += totals[p.id] || 0;
       });
 
-      // send results
       io.in(code).emit("round_result", {
         winnerId,
         hands,
@@ -294,7 +300,7 @@ io.on("connection", (socket) => {
       const totals = {};
       room.players.forEach(p => totals[p.id] = sum(hands[p.id]||[]));
 
-      // lowest hand total wins; if caller not lowest, caller gets +50
+      // lowest total wins; if caller not lowest, caller gets +50
       let winnerId = room.players[0].id, best = Infinity;
       room.players.forEach(p=>{ const t=totals[p.id]; if(t<best){best=t; winnerId=p.id;} });
       const penalties = {};
@@ -335,15 +341,12 @@ io.on("connection", (socket) => {
   socket.on("disconnect", ()=>{
     const room = findRoomBySocket(socket);
     if(!room) return;
-    // remove player
     room.players = room.players.filter(p=>p.socketId !== socket.id);
     delete room.hands[socket.id];
-    // host fallback
     if(room.host===socket.id && room.players.length) room.host = room.players[0].id;
     if(room.players.length===0){
       rooms.delete(room.code);
     }else{
-      // if current turn left, move to next
       if(room.turn===socket.id) room.turn = nextPlayer(room, socket.id);
       io.in(room.code).emit("room_state", visibleState(room));
       room.players.forEach(p => io.to(p.socketId).emit("your_hand", room.hands[p.id]||[]));
