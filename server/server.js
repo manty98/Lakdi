@@ -4,10 +4,9 @@
 // - Start game, turns, discard/draw
 // - Lakdi with first-cut priority (flat +50 invalid)
 // - Round results, next round, game over threshold
-const CLIENT_DIR = path.resolve(__dirname, "../client");
-const INDEX_FILE = path.join(CLIENT_DIR, "index.html");
 
-
+const path = require("path");
+const fs = require("fs");
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -19,14 +18,39 @@ const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] },
 });
 
+/* ---------- Serve client from ../client (robust) ---------- */
+const candidates = [
+  path.join(__dirname, "../client"),    // Root Directory = server
+  path.join(process.cwd(), "client"),   // Root Directory = repo root
+  path.join(__dirname, "../../client"), // safety
+];
+let CLIENT_DIR = null;
+for (const p of candidates) {
+  if (fs.existsSync(path.join(p, "index.html"))) { CLIENT_DIR = p; break; }
+}
+if (!CLIENT_DIR) {
+  console.error("[Lakdi] FATAL: client/index.html not found. Checked:");
+  candidates.forEach(p => console.error(" -", p));
+  process.exit(1);
+}
+console.log("[Lakdi] Serving client from:", CLIENT_DIR);
+
+app.use(express.static(CLIENT_DIR));
+app.get("/", (_req, res) => res.sendFile(path.join(CLIENT_DIR, "index.html")));
 app.get("/health", (_req, res) => res.send("ok"));
+// SPA fallback (avoid catching socket.io path)
+app.get("*", (req, res, next) => {
+  if (req.path.startsWith("/socket.io")) return next();
+  res.sendFile(path.join(CLIENT_DIR, "index.html"));
+});
 
 /* --------- Helpers --------- */
 const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
 const SUITS = ["hearts","diamonds","clubs","spades"];
+const sym = {hearts:"♥",diamonds:"♦",clubs:"♣",spades:"♠"};
 const v = r => r==="A"?1:r==="J"?11:r==="Q"?12:r==="K"?13:parseInt(r,10);
 const sum = hand => hand.reduce((a,c)=>a+v(c.rank),0);
-const label = c => `${c.rank}${{hearts:"♥",diamonds:"♦",clubs:"♣",spades:"♠"}[c.suit]}`;
+const label = c => `${c.rank}${sym[c.suit]}`;
 const deck = (n=1) => {
   const d=[];
   for(let k=0;k<n;k++) for(const s of SUITS) for(const r of RANKS) d.push({suit:s,rank:r});
@@ -41,10 +65,13 @@ function visibleState(room) {
     phase: room.phase,
     round: room.round,
     turn: room.turn,
+    currentTurn: room.turn,       // alias for clients that expect currentTurn
     pastTop: room.pastTop || null,
     stockCount: room.deck.length,
     firstTurn: room.firstTurn,
-    players: room.players.map(p => ({ id:p.id, name:p.name, score:p.score, isHost: p.id===room.host })),
+    players: room.players.map(p => ({
+      id:p.id, name:p.name, score:p.score, isHost: p.id===room.host
+    })),
   };
 }
 
@@ -54,7 +81,7 @@ const rooms = new Map();
 //   code, host, phase:'lobby'|'playing',
 //   round, deck, hands: {pid:[]}, turn, pastTop, firstTurn,
 //   players:[{id,name,score,socketId}],
-//   pendingCut: {callerId, responded:Set, resolved:boolean}
+//   pendingCut: {callerId, responded:Set, resolved:boolean, handsSnapshot:{}}
 // }
 
 function nextPlayer(room, pid) {
@@ -62,8 +89,7 @@ function nextPlayer(room, pid) {
   return room.players[(idx+1)%room.players.length].id;
 }
 function playersAfter(room, pid) {
-  const arr=[];
-  let cur = pid;
+  const arr=[]; let cur = pid;
   for(let i=1;i<room.players.length;i++){ cur = nextPlayer(room, cur); arr.push(cur); }
   return arr;
 }
@@ -78,7 +104,6 @@ function startGame(room) {
   room.turn = room.host;
   room.firstTurn = true;
   io.in(room.code).emit("room_state", visibleState(room));
-  // private hands
   room.players.forEach(p => {
     io.to(p.socketId).emit("your_hand", room.hands[p.id]);
   });
@@ -181,7 +206,8 @@ io.on("connection", (socket) => {
   socket.on("draw", ({code, source}, ack) => {
     const room = rooms.get(code); if(!room||room.turn!==socket.id) return;
     const hand = room.hands[socket.id] || [];
-    if(source==="past"){
+    // accept "past" or "discard" for drawing from past pile; anything else -> stock
+    if(source==="past" || source==="discard"){
       if(!room.pastTop) return;
       hand.push(room.pastTop);
       room.pastTop=null;
@@ -200,12 +226,13 @@ io.on("connection", (socket) => {
     // Open a pending cut sequence
     const callerId = socket.id;
     const hands = room.hands;
-    const totals = {};
-    room.players.forEach(p => totals[p.id] = sum(hands[p.id]||[]));
-    room.pendingCut = { roomCode:code, callerId, responded:new Set(), resolved:false, handsSnapshot: JSON.parse(JSON.stringify(hands)) };
+    room.pendingCut = {
+      roomCode:code, callerId,
+      responded:new Set(), resolved:false,
+      handsSnapshot: JSON.parse(JSON.stringify(hands))
+    };
 
-    // First-cut priority: check in-order AIs/humans is handled by clients; on server side we accept first "cut"
-    // Broadcast declaration
+    // Broadcast declaration (clients implement first-cut priority UX)
     io.in(code).emit("lakdi_declared", {
       callerId,
       callerName: (room.players.find(p=>p.id===callerId)||{}).name,
@@ -219,7 +246,7 @@ io.on("connection", (socket) => {
     if(pend.resolved) return;
     const callerId = pend.callerId;
 
-    // Only accept first valid "cut". Everyone can "stand" but it doesn't resolve unless all stood.
+    // First valid "cut" resolves immediately
     if(action==="cut"){
       pend.resolved = true;
       const hands = room.hands;
@@ -233,14 +260,14 @@ io.on("connection", (socket) => {
       if(myT < callerT){
         winnerId = socket.id; // valid cut → cutter wins
       }else{
-        winnerId = callerId;  // invalid cut → flat +50 on cutter, declarer stands
-        penalties[socket.id] = 50;
+        winnerId = callerId;  // invalid cut → declarer stands
+        penalties[socket.id] = 50; // flat +50 on incorrect cut
       }
 
       // apply scores
       room.players.forEach(p=>{
-        if(p.id===winnerId) return; // 0
-        else if(penalties[p.id]===50) p.score += 50;
+        if(p.id===winnerId) return; // winner gets 0
+        else if(penalties[p.id]===50) p.score += 50; // flat
         else p.score += totals[p.id] || 0;
       });
 
@@ -257,7 +284,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // "stand"
+    // "stand" path — wait until all others (except caller) stand
     pend.responded.add(socket.id);
     const others = room.players.filter(p=>p.id!==callerId);
     const allStood = others.every(p => pend.responded.has(p.id));
@@ -267,7 +294,7 @@ io.on("connection", (socket) => {
       const totals = {};
       room.players.forEach(p => totals[p.id] = sum(hands[p.id]||[]));
 
-      // lowest wins; if caller not lowest, caller gets +50
+      // lowest hand total wins; if caller not lowest, caller gets +50
       let winnerId = room.players[0].id, best = Infinity;
       room.players.forEach(p=>{ const t=totals[p.id]; if(t<best){best=t; winnerId=p.id;} });
       const penalties = {};
@@ -325,5 +352,8 @@ io.on("connection", (socket) => {
 
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log("Lakdi server running on", PORT));
+/* --------- Start Server --------- */
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, "0.0.0.0", () => {
+  console.log("Lakdi server running on", PORT);
+});
