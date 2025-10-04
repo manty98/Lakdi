@@ -1,66 +1,96 @@
-// server/server.js (ESM, full file - FINAL VERSION)
+// server/server.js (ESM)
 // Lakdi server: Express + Socket.IO
-// - Create / Join rooms
-// - Start game, turns, discard/draw
-// - Past pile sync across clients (discard_update / draw_update)
-// - Minimal round/next_round scaffolding (re-deals 3 cards)
-// NOTE: Requires Node 18+ with "type": "module" in package.json
+// - Lobby: connection status only
+// - Game: room code + per-player hands visible
+// - Lakdi rules: discard/draw, Lakdi call, cut challenge (+50 penalty), rounds
 
+import path from "path";
+import fs from "fs";
+import {
+    fileURLToPath
+} from "url";
 import express from "express";
 import http from "http";
-import { Server } from "socket.io";
-import crypto from "crypto";
+import {
+    Server
+} from "socket.io";
 import cors from "cors";
+import crypto from "crypto";
 
-/* ---------- App & IO ---------- */
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const APP_ORIGINS = [
+    "https://manty98.github.io",
+    "https://lakdi.onrender.com",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+];
+
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin: APP_ORIGINS,
+    credentials: true
+}));
 
-app.get("/health", (_req, res) => res.send("ok"));
+/* ---------- Serve client ---------- */
+const cand = [
+    path.join(__dirname, "../client"),
+    path.join(process.cwd(), "client"),
+    path.join(__dirname, "../../client")
+];
+let CLIENT_DIR = null;
+for (const p of cand) {
+    if (fs.existsSync(path.join(p, "index.html"))) {
+        CLIENT_DIR = p;
+        break;
+    }
+}
+if (!CLIENT_DIR) {
+    console.error("[Lakdi] client/index.html not found.");
+    process.exit(1);
+}
+app.use(express.static(CLIENT_DIR));
+app.get("/", (_req, res) => res.sendFile(path.join(CLIENT_DIR, "index.html")));
+app.get("/health", (_req, res) => res.send("OK"));
+app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/socket.io")) return next();
+    res.sendFile(path.join(CLIENT_DIR, "index.html"));
+});
 
+/* ---------- HTTP server + Socket.IO ---------- */
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    },
-    path: "/socket.io",
+        origin: APP_ORIGINS,
+        methods: ["GET", "POST"],
+        credentials: true
+    }
 });
 
-/* ---------- Game Helpers ---------- */
+/* ---------- Helpers ---------- */
 const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 const SUITS = ["hearts", "diamonds", "clubs", "spades"];
-const v = (r) => (r === "A" ? 1 : r === "J" ? 11 : r === "Q" ? 12 : r === "K" ? 13 : parseInt(r, 10));
-const sum = (hand) => hand.reduce((a, c) => a + v(c.rank), 0);
-
-function deck(n = 1) {
+const v = r => r === "A" ? 1 : r === "J" ? 11 : r === "Q" ? 12 : r === "K" ? 13 : parseInt(r, 10);
+const sum = hand => hand.reduce((a, c) => a + v(c.rank), 0);
+const deck = (n = 1) => {
     const d = [];
     for (let k = 0; k < n; k++)
         for (const s of SUITS)
-            for (const r of RANKS) d.push({ suit: s, rank: r });
+            for (const r of RANKS) d.push({
+                suit: s,
+                rank: r
+            });
     for (let i = d.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [d[i], d[j]] = [d[j], d[i]];
     }
     return d;
-}
+};
+const code6 = () => crypto.randomBytes(3).toString("hex").toUpperCase();
 
-function code6() {
-    return crypto.randomBytes(4).toString("hex").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
-}
-
-function nextPlayer(room, pid) {
-    const idx = room.players.findIndex(p => p.id === pid);
-    if (idx < 0) return room.players[0]?.id ?? null;
-    return room.players[(idx + 1) % room.players.length].id;
-}
-
-/* ---------- State helpers ---------- */
+/* ---------- State builders ---------- */
 function visibleState(room) {
-    const cardCounts = {};
-    for (const p of room.players) {
-        cardCounts[p.id] = (room.hands[p.id] || []).length;
-    }
     return {
         code: room.code,
         phase: room.phase,
@@ -68,17 +98,14 @@ function visibleState(room) {
         turn: room.turn,
         currentTurn: room.turn,
         pastTop: room.pastTop || null,
-        pastDiscardTop: room.pastTop || null,
         stockCount: room.deck.length,
         firstTurn: room.firstTurn,
-        cardCounts,
         players: room.players.map(p => ({
             id: p.id,
             name: p.name,
-            score: p.score || 0,
+            score: p.score,
             isHost: p.id === room.host
         })),
-        hostId: room.host,
     };
 }
 
@@ -88,51 +115,36 @@ function buildStateFor(room, pid) {
         id: pid,
         name: (room.players.find(p => p.id === pid) || {}).name
     };
-    st.hands = { [pid]: room.hands[pid] || [] };
+    st.hands = {
+        [pid]: room.hands[pid] || []
+    };
     return st;
 }
 
 function sendState(room) {
-    for (const p of room.players) {
+    room.players.forEach(p => {
         io.to(p.socketId).emit("room_state", buildStateFor(room, p.id));
-    }
+    });
 }
 
-/* ---------- In-memory Rooms ---------- */
+/* ---------- In-memory rooms ---------- */
 const rooms = new Map();
 
-function newRoom(code, hostId, hostName) {
-    return {
-        code,
-        host: hostId,
-        phase: "lobby",
-        round: 0,
-        deck: [],
-        hands: {},
-        turn: null,
-        pastTop: null,
-        firstTurn: true,
-        players: [{
-            id: hostId,
-            name: hostName || "Player",
-            score: 0,
-            socketId: hostId
-        }],
-    };
+function nextPlayer(room, pid) {
+    const idx = room.players.findIndex(p => p.id === pid);
+    return room.players[(idx + 1) % room.players.length].id;
 }
 
-/* ---------- Core Game Ops ---------- */
 function startGame(room) {
     room.phase = "playing";
     room.round = 1;
     room.deck = deck(Math.ceil(room.players.length / 6));
     room.hands = {};
-    for (const p of room.players) {
+    room.players.forEach(p => {
         room.hands[p.id] = room.deck.splice(-3);
-    }
-    // Seed Past with the first face-up card
-    room.pastTop = room.deck.length ? room.deck.pop() : null;
-    room.turn = room.host ?? room.players[0]?.id ?? null;
+    });
+    room.pastTop = room.deck.pop() || null;
+    room.turn = room.host;
     room.firstTurn = true;
     sendState(room);
 }
@@ -140,32 +152,90 @@ function startGame(room) {
 function startNextRound(room) {
     room.round += 1;
     room.deck = deck(Math.ceil(room.players.length / 6));
-    for (const p of room.players) room.hands[p.id] = room.deck.splice(-3);
-    room.pastTop = room.deck.length ? room.deck.pop() : null;
+    room.hands = {};
+    room.players.forEach(p => {
+        room.hands[p.id] = room.deck.splice(-3);
+    });
+    room.pastTop = room.deck.pop() || null;
     room.firstTurn = true;
-    room.turn = room.players[0]?.id ?? null;
+    room.turn = room.players[0].id;
     sendState(room);
 }
 
-/* ---------- Socket.IO Events ---------- */
+function endTurn(room, pid, immediate) {
+    room.pastTop = immediate && immediate.length ? immediate[immediate.length - 1] : room.pastTop;
+    room.turn = nextPlayer(room, pid);
+    room.firstTurn = false;
+    sendState(room);
+}
+
+function findRoomBySocket(socket) {
+    for (const r of rooms.values()) {
+        if (r.players.some(p => p.socketId === socket.id)) return r;
+    }
+    return null;
+}
+
+/* ---------- Socket.IO events ---------- */
 io.on("connection", (socket) => {
-    
-    socket.on("create_room", ({ name }, ack) => {
-        const code = code6();
-        const room = newRoom(code, socket.id, name);
+    // Connection status for lobby
+    socket.emit("conn_status", {
+        status: "connected"
+    });
+    socket.on("disconnecting", () => socket.emit("conn_status", {
+        status: "disconnected"
+    }));
+
+    socket.on("create_room", ({
+        name
+    }, ack) => {
+        const code = code6().slice(0, 6);
+        const room = {
+            code,
+            host: socket.id,
+            phase: "lobby",
+            round: 0,
+            deck: [],
+            hands: {},
+            turn: null,
+            pastTop: null,
+            firstTurn: true,
+            players: [{
+                id: socket.id,
+                name: name || "Host",
+                score: 0,
+                socketId: socket.id
+            }],
+            pendingCut: null,
+        };
         rooms.set(code, room);
         socket.join(code);
-        ack && ack({ ok: true, code, meId: socket.id });
+        ack && ack({
+            ok: true,
+            code,
+            meId: socket.id
+        });
         sendState(room);
     });
 
-    socket.on("join_room", ({ name, code }, ack) => {
+    socket.on("join_room", ({
+        name,
+        code
+    }, ack) => {
         code = (code || "").toUpperCase();
         const room = rooms.get(code);
-        if (!room) return ack && ack({ ok: false, error: "Room not found" });
-        if (room.phase !== "lobby") return ack && ack({ ok: false, error: "Game already started" });
-        if (room.players.length >= 6) return ack && ack({ ok: false, error: "Room is full" });
-
+        if (!room) return ack({
+            ok: false,
+            error: "Room not found"
+        });
+        if (room.phase !== "lobby") return ack({
+            ok: false,
+            error: "Game already started"
+        });
+        if (room.players.length >= 6) return ack({
+            ok: false,
+            error: "Room full"
+        });
         room.players.push({
             id: socket.id,
             name: name || "Player",
@@ -173,132 +243,213 @@ io.on("connection", (socket) => {
             socketId: socket.id
         });
         socket.join(code);
-        ack && ack({ ok: true, code, meId: socket.id });
+        ack && ack({
+            ok: true,
+            code,
+            meId: socket.id
+        });
         sendState(room);
     });
 
-    socket.on("start_game", ({ code }) => {
+    socket.on("start_game", ({
+        code
+    }) => {
         const room = rooms.get(code);
-        if (!room || room.host !== socket.id || room.players.length < 2) return;
+        if (!room || room.host !== socket.id) return;
+        if (room.players.length < 2) return;
         startGame(room);
     });
 
-    /* ---------- DISCARD (FIXED) ---------- */
-    socket.on("discard", ({ code, cards }, ack) => {
+    socket.on("discard", ({
+        code,
+        cards
+    }, ack) => {
         const room = rooms.get(code);
         if (!room || room.turn !== socket.id) return;
-
         const hand = room.hands[socket.id] || [];
-        const r0 = cards && cards[0] && cards[0].rank;
-        if (!cards || !cards.length || !cards.every(c => c.rank === r0)) return;
-
-        // Remove cards from hand
+        if (!cards || cards.length > 3) return;
+        const r0 = cards[0].rank;
+        if (!cards.every(c => c.rank === r0)) return;
         const toKey = c => `${c.rank}_${c.suit}`;
-        const need = new Set(cards.map(toKey));
-        const removed = [];
+        const set = new Set(cards.map(toKey));
+        let removed = [];
         room.hands[socket.id] = hand.filter(c => {
             const k = toKey(c);
-            if (need.has(k) && !removed.some(x => toKey(x) === k)) {
+            if (set.has(k) && !removed.some(x => toKey(x) === k)) {
                 removed.push(c);
                 return false;
             }
             return true;
         });
-
-        // Store immediate discard temporarily (don't update pastTop yet)
         socket.data.immediate = removed;
-
-        ack && ack({ ok: true });
-
-        // Broadcast that discard happened (Past pile is NOT yet available)
-        io.in(code).emit("discard_update", {
-            playerId: socket.id,
-            cards: removed,
-            newPastTop: room.pastTop, // Still the OLD past pile
-            nextTurn: room.turn // Turn hasn't changed yet
+        ack && ack({
+            ok: true
         });
-
-        // Send updated state to refresh hand counts
         sendState(room);
     });
 
-    /* ---------- DRAW (FIXED) ---------- */
-    socket.on("draw", ({ code, source }, ack) => {
+    socket.on("draw", ({
+        code,
+        source
+    }, ack) => {
         const room = rooms.get(code);
         if (!room || room.turn !== socket.id) return;
-
         const hand = room.hands[socket.id] || [];
-
         if (source === "past" || source === "discard") {
             if (!room.pastTop) return;
             hand.push(room.pastTop);
-            room.pastTop = null; // Consumed
+            room.pastTop = null;
         } else {
             if (!room.deck.length) return;
             hand.push(room.deck.pop());
         }
-
         room.hands[socket.id] = hand;
-
-        // NOW update Past pile with the card(s) just discarded
-        const immediate = socket.data.immediate || [];
-        if (immediate.length) {
-            room.pastTop = immediate[immediate.length - 1];
-        }
-        socket.data.immediate = [];
-
-        // Advance turn
-        const nextTurn = nextPlayer(room, socket.id);
-        room.turn = nextTurn;
-        room.firstTurn = false;
-
-        ack && ack({ ok: true });
-
-        // Broadcast draw completion with NEW past pile
-        io.in(code).emit("draw_update", {
-            playerId: socket.id,
-            source,
-            newPastTop: room.pastTop, // NOW shows the discarded card
-            stockCount: room.deck.length,
-            nextTurn: room.turn
+        ack && ack({
+            ok: true
         });
-
-        // Send full state update
-        sendState(room);
+        endTurn(room, socket.id, socket.data.immediate || []);
+        socket.data.immediate = [];
     });
 
-    socket.on("next_round", ({ code }) => {
+    socket.on("call_lakdi", ({
+        code
+    }) => {
         const room = rooms.get(code);
         if (!room) return;
+        const callerId = socket.id;
+        const hands = room.hands;
+        room.pendingCut = {
+            roomCode: code,
+            callerId,
+            responded: new Set(),
+            resolved: false,
+            handsSnapshot: JSON.parse(JSON.stringify(hands))
+        };
+        io.in(code).emit("lakdi_declared", {
+            callerId,
+            callerName: (room.players.find(p => p.id === callerId) || {}).name,
+            callerHand: hands[callerId] || []
+        });
+    });
+
+    socket.on("respond_cut", ({
+        code,
+        action
+    }) => {
+        const room = rooms.get(code);
+        if (!room || !room.pendingCut) return;
+        const pend = room.pendingCut;
+        if (pend.resolved) return;
+        const callerId = pend.callerId;
+        if (action === "cut") {
+            pend.resolved = true;
+            const totals = {};
+            room.players.forEach(p => totals[p.id] = sum(room.hands[p.id] || []));
+            const callerT = totals[callerId] ?? 1e9,
+                myT = totals[socket.id] ?? 1e9;
+            let winnerId, penalties = {};
+            if (myT < callerT) winnerId = socket.id;
+            else {
+                winnerId = callerId;
+                penalties[socket.id] = 50;
+            }
+            room.players.forEach(p => {
+                if (p.id === winnerId) return;
+                else if (penalties[p.id] === 50) p.score += 50;
+                else p.score += totals[p.id] || 0;
+            });
+            io.in(code).emit("round_result", {
+                winnerId,
+                hands: room.hands,
+                totals,
+                penalties,
+                scores: room.players.map(p => ({
+                    id: p.id,
+                    score: p.score,
+                    name: p.name
+                }))
+            });
+            room.pendingCut = null;
+            return;
+        }
+        pend.responded.add(socket.id);
+        const others = room.players.filter(p => p.id !== callerId);
+        if (others.every(p => pend.responded.has(p.id))) {
+            pend.resolved = true;
+            const totals = {};
+            room.players.forEach(p => totals[p.id] = sum(room.hands[p.id] || []));
+            let winnerId = room.players[0].id,
+                best = Infinity;
+            room.players.forEach(p => {
+                const t = totals[p.id];
+                if (t < best) {
+                    best = t;
+                    winnerId = p.id;
+                }
+            });
+            const penalties = {};
+            if (winnerId !== callerId) penalties[callerId] = 50;
+            room.players.forEach(p => {
+                if (p.id === winnerId) return;
+                else if (penalties[p.id] === 50) p.score += 50;
+                else p.score += totals[p.id] || 0;
+            });
+            io.in(code).emit("round_result", {
+                winnerId,
+                hands: room.hands,
+                totals,
+                penalties,
+                scores: room.players.map(p => ({
+                    id: p.id,
+                    score: p.score,
+                    name: p.name
+                }))
+            });
+            room.pendingCut = null;
+        }
+    });
+
+    socket.on("next_round", ({
+        code
+    }) => {
+        const room = rooms.get(code);
+        if (!room) return;
+        const max = Math.max(...room.players.map(p => p.score));
+        if (max >= 200) {
+            io.in(code).emit("game_over", {
+                scores: room.players.map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    score: p.score
+                }))
+            });
+            room.phase = "lobby";
+            room.turn = null;
+            room.deck = [];
+            room.hands = {};
+            room.pastTop = null;
+            room.firstTurn = true;
+            room.round = 0;
+            sendState(room);
+            return;
+        }
         startNextRound(room);
-        io.in(code).emit("next_round_state", buildStateFor(room, room.turn));
     });
 
     socket.on("disconnect", () => {
-        for (const [code, room] of rooms) {
-            const before = room.players.length;
-            room.players = room.players.filter(p => p.socketId !== socket.id);
-            delete room.hands[socket.id];
-            
-            if (before !== room.players.length) {
-                if (room.host === socket.id && room.players.length) {
-                    room.host = room.players[0].id;
-                }
-                if (room.turn === socket.id) {
-                    room.turn = nextPlayer(room, socket.id);
-                }
-                if (room.players.length === 0) {
-                    rooms.delete(code);
-                } else {
-                    sendState(room);
-                }
-            }
+        const room = findRoomBySocket(socket);
+        if (!room) return;
+        room.players = room.players.filter(p => p.socketId !== socket.id);
+        delete room.hands[socket.id];
+        if (room.host === socket.id && room.players.length) room.host = room.players[0].id;
+        if (!room.players.length) rooms.delete(room.code);
+        else {
+            if (room.turn === socket.id) room.turn = nextPlayer(room, socket.id);
+            sendState(room);
         }
     });
 });
 
 /* ---------- Start Server ---------- */
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log("Lakdi server running on", PORT);
-});
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, "0.0.0.0", () => console.log("Lakdi server on", PORT));
